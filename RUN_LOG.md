@@ -26,8 +26,8 @@ visual weight.
 | # | Unit | State | Commit |
 |---|------|-------|--------|
 | 1 | Responsive two-column layout on wide viewports | done, browser-verified | `39f18ab` |
-| 2 | Visual hierarchy + craft pass (type, spacing, states, transitions) | dispatched | — |
-| 3 | First-run guidance + honest labels (Presence = volume) | queued | — |
+| 2 | Visual hierarchy + craft pass (type, spacing, states, transitions) | done, browser-verified | `6c6de27` |
+| 3 | First-run guidance + honest labels (Presence = volume) | dispatched | — |
 | 4 | The canvas field: depth, per-biome signature, grading | queued | — |
 | 5 | Stretch: now-playing state + micro-interactions | queued | — |
 

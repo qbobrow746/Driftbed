@@ -92,6 +92,23 @@
     text-transform:uppercase;
     color:var(--ink-3);
   }
+  /* quiet affordance to bring the first-run hint back after it's been dismissed — lives
+     beside the wordmark rather than in the panel, so it survives independently of anything
+     the panel is doing. */
+  .hint-reopen{
+    align-self:flex-start;
+    margin-top:var(--sp-1);
+    width:1.5rem; height:1.5rem; border-radius:999px;
+    border:1px solid var(--panel-border); background:rgba(255,255,255,.03);
+    color:var(--ink-3);
+    font-family:'Manrope'; font-size:var(--fs-2); line-height:1;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; user-select:none;
+    transition:color .2s ease, border-color .2s ease, background .2s ease;
+  }
+  .hint-reopen:hover{ color:var(--ink); border-color:color-mix(in srgb, var(--accent) 40%, var(--panel-border)); }
+  .hint-reopen:active{ filter:brightness(.9); }
+  .hint-reopen:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
 
   .chord-mark{
     position:fixed; bottom:max(2rem, env(safe-area-inset-bottom) + .6rem); left:max(2rem, env(safe-area-inset-left) + .6rem); z-index:2;
@@ -143,6 +160,41 @@
       flex:1 1 0; min-width:0;
     }
   }
+
+  /* first-run hint: teaches the three things a newcomer needs (press play, Presence is the
+     volume, how to play notes) once, then stays gone until brought back via the "?" beside
+     the wordmark. It's plain flow content at the top of the left column, not an overlay —
+     nothing it says is required to use the instrument underneath, so it never blocks a
+     control or dims the page. */
+  .first-run{
+    position:relative;
+    display:flex; flex-direction:column; gap:var(--sp-2);
+    background:color-mix(in srgb, var(--accent) 7%, rgba(255,255,255,.03));
+    border:1px solid color-mix(in srgb, var(--accent) 28%, var(--panel-border));
+    border-radius:16px;
+    padding:var(--sp-4) var(--sp-6) var(--sp-3) var(--sp-4);
+    font-size:var(--fs-3); color:var(--ink-dim); line-height:1.55;
+    animation:firstRunIn .35s ease;
+  }
+  .first-run[hidden]{ display:none; }
+  @keyframes firstRunIn{ from{ opacity:0; translate:0 -.35rem; } to{ opacity:1; translate:0 0; } }
+  .first-run-title{
+    margin:0;
+    font-family:'Fraunces', ui-serif, Georgia, serif; font-style:italic; font-optical-sizing:auto;
+    font-weight:500; font-size:var(--fs-6); color:var(--ink); opacity:.92;
+  }
+  .first-run-line{ margin:0; }
+  .first-run strong{ color:var(--ink); font-weight:600; }
+  .first-run-keys{ font-family:'IBM Plex Mono', ui-monospace, monospace; letter-spacing:.1em; color:var(--ink); }
+  .first-run-close{
+    position:absolute; top:.5rem; right:.5rem;
+    width:1.5rem; height:1.5rem; border-radius:999px; border:none; background:transparent;
+    color:var(--ink-3); font-size:var(--fs-5); line-height:1; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition:color .2s ease;
+  }
+  .first-run-close:hover{ color:var(--ink); }
+  .first-run-close:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
 
   /* biome totems — secondary tier: reached for often, styled a clear step below the
      play button/Presence/pads but with more presence than the set-and-forget controls. */
@@ -207,6 +259,7 @@
   @media (prefers-reduced-motion: reduce){
     .breathe::before, .breathe.playing::before{ animation:none; }
     .quick-actions button.recording svg{ animation:none; }
+    .first-run{ animation:none; }
   }
   .breathe:focus-visible{ outline:2px solid var(--focus); outline-offset:3px; }
 
@@ -217,6 +270,14 @@
      (Intensity, Melody's header) stays at the secondary size defined further down. */
   .core .fader-label{ font-size:var(--fs-6); font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--ink); }
   .core .fader-value{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:var(--fs-5); color:var(--ink); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  /* Presence's plain-language gloss — same idea as a dial's quieter sub-caption, just
+     inline: the name stays (it's the app's voice), but "volume" is what a first-time user
+     actually needs to see so the slider never reads as a mood/ambience control again. */
+  .fader-sublabel{
+    display:inline-block; margin-left:.5em;
+    font-family:'Manrope'; font-weight:500; letter-spacing:.02em; text-transform:none;
+    font-size:var(--fs-3); color:var(--ink-3);
+  }
   .fader-label{ font-size:var(--fs-4); font-weight:500; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-dim); }
   .fader-value{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:var(--fs-3); color:var(--ink-dim); font-variant-numeric:tabular-nums; white-space:nowrap; }
 
@@ -547,6 +608,7 @@
     .mark-name{ font-size:var(--fs-8); }
     .chord-mark{ bottom:max(1rem, env(safe-area-inset-bottom) + .5rem); left:max(1rem, env(safe-area-inset-left) + .5rem); font-size:var(--fs-4); }
     .panel{ padding:1.5rem 1.2rem 1.2rem; gap:1.3rem; border-radius:20px; }
+    .first-run{ padding:var(--sp-3) var(--sp-5) var(--sp-2) var(--sp-3); }
     .totems-row{ gap:var(--sp-1); }
     /* Eight biomes don't fit one phone row without shrinking the totems below a usable tap
        target, so cap the group at four across and let it wrap to a balanced 4+4 instead of
@@ -582,6 +644,7 @@
 <div class="mark">
   <span class="mark-name">Driftbed</span>
   <span class="mark-sub">ambient layers · standalone</span>
+  <button class="hint-reopen" id="firstRunReopen" aria-label="Show the quick start hint">?</button>
 </div>
 
 <div class="chord-mark" id="chordReadout"></div>
@@ -589,6 +652,12 @@
 <main class="stage">
   <div class="panel">
     <div class="panel-col">
+    <div class="first-run" id="firstRun" role="group" aria-label="Quick start" hidden>
+      <button class="first-run-close" id="firstRunClose" aria-label="Dismiss quick start hint">&times;</button>
+      <p class="first-run-title">start here</p>
+      <p class="first-run-line">Press play, then bring up <strong>Presence</strong> — that's the volume, and it opens low.</p>
+      <p class="first-run-line">Play the pads with your mouse, the <span class="first-run-keys">A S D F G</span> keys, or a MIDI keyboard.</p>
+    </div>
     <div class="totems-row">
       <div class="totems" role="group" aria-label="Biome">
         <button class="totem" data-biome="desert" aria-label="Desert" title="Desert">
@@ -665,13 +734,13 @@
           <option value="minorPentatonic">Minor Pentatonic</option>
           <option value="wholeTone">Whole Tone</option>
         </select>
-        <p class="popover-hint">Sets the root note and scale independently of the biome — pick "Follow biome" on either to go back to its default. The Key dial below still transposes playback on top of this.</p>
+        <p class="popover-hint">Sets the root note and scale independently of the biome — pick "Follow biome" on either to go back to its default. The Transpose dial below still shifts playback on top of this.</p>
       </div>
       <button class="side-tab" id="midiTab" aria-expanded="false" aria-controls="midiPopover">midi</button>
       <div class="popover" id="midiPopover" hidden>
         <div class="popover-title">MIDI input</div>
         <button class="seg-btn" id="midiToggleBtn" aria-pressed="false">Enable MIDI</button>
-        <p class="popover-hint" id="midiStatus" aria-live="polite">Not connected.</p>
+        <p class="popover-hint" id="midiStatus" aria-live="polite">Not connected — click Enable MIDI, every page load, to allow it.</p>
         <p class="popover-hint" id="midiActivity"></p>
         <div class="fader-top">
           <span class="fader-label">Keyboard level</span>
@@ -711,10 +780,10 @@
 
       <div class="fader-block">
         <div class="fader-top">
-          <span class="fader-label">Presence</span>
+          <span class="fader-label">Presence<span class="fader-sublabel">(volume)</span></span>
           <span class="fader-value" id="presenceValue">0%</span>
         </div>
-        <input type="range" class="range range-lg" id="presence" min="0" max="100" value="35" aria-label="Presence" />
+        <input type="range" class="range range-lg" id="presence" min="0" max="100" value="35" aria-label="Presence — master volume" />
         <div class="fader-ends"><span>silent</span><span>felt</span></div>
       </div>
     </div>
@@ -803,9 +872,9 @@
           next chord
         </button>
         <button class="chip chip-secondary" id="chipFreeze" aria-pressed="false" aria-label="Freeze the current chord — pauses the progression indefinitely" title="Pin the current chord: the progression stops advancing until you unfreeze">freeze</button>
-        <button id="loopBtn" aria-label="Record a melody loop" aria-pressed="false">
+        <button id="loopBtn" aria-label="Record a phrase loop" aria-pressed="false" title="Record what you play on the pads, then repeat it hands-free">
           <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="5" fill="currentColor" stroke="none"/></svg>
-          <span id="loopLabel">loop</span>
+          <span id="loopLabel">phrase loop</span>
         </button>
         <button id="recordBtn" aria-label="Start recording" aria-pressed="false" title="Record the output to a file">
           <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="5" fill="currentColor" stroke="none"/></svg>
@@ -818,9 +887,9 @@
           <option value="60">60s loop</option>
           <option value="120">120s loop</option>
         </select>
-        <button id="loopCaptureBtn" aria-label="Capture a seamless loop export" aria-pressed="false" title="Capture a fixed-length WAV that repeats with no seam — crossfades the tail back over the head. Freezes the current chord for the capture, since a chord change mid-loop can't be hidden. (Not the same as the 'loop' button above, which replays a played performance.)">
+        <button id="loopCaptureBtn" aria-label="Capture a seamless export" aria-pressed="false" title="Capture a fixed-length WAV that repeats with no seam — crossfades the tail back over the head. Freezes the current chord for the capture, since a chord change mid-loop can't be hidden. (Not the same as 'phrase loop' above, which replays a played performance rather than writing a file.)">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 10a6 6 0 1 1 2.3 4.7"/><path d="M4 15.2v-3.5h3.5"/></svg>
-          <span id="loopCaptureLabel">loop export</span>
+          <span id="loopCaptureLabel">seamless export</span>
         </button>
         <span class="rec-status" id="recStatus" aria-live="polite"></span>
       </div>
@@ -852,8 +921,8 @@
         <input type="range" class="range range-sm" id="warmth" min="0" max="100" value="40" aria-label="Warmth" />
       </div>
       <div class="dial">
-        <div class="dial-top"><span class="dial-label">Key</span><span class="dial-value" id="transposeValue">0 st</span></div>
-        <input type="range" class="range range-sm" id="transpose" min="-12" max="12" value="0" aria-label="Key shift in semitones" />
+        <div class="dial-top"><span class="dial-label">Transpose</span><span class="dial-value" id="transposeValue">0 st</span></div>
+        <input type="range" class="range range-sm" id="transpose" min="-12" max="12" value="0" aria-label="Transpose in semitones" />
       </div>
     </div>
 
@@ -863,7 +932,7 @@
       <button class="chip" id="chipWind" aria-pressed="true">wind</button>
       <button class="chip" id="chipEcho" aria-pressed="true">echo</button>
       <button class="chip" id="chipDrift" aria-pressed="true">drift</button>
-      <button class="chip" id="chipPulse" aria-pressed="true" title="Let the visual field react to the actual sound (level and tone), not just the Presence slider">pulse</button>
+      <button class="chip" id="chipPulse" aria-pressed="true" title="Let the visual field react to the actual sound (level and tone), not just the Presence (volume) slider">pulse</button>
       <button class="chip" id="chipBreathe" aria-pressed="false">breathe</button>
       <button class="chip" id="chipPerformer" aria-pressed="false" title="Let the instrument perform its own melody, hands-free">auto</button>
       <button class="chip" id="chipTape" aria-pressed="false" aria-label="Tape character — saturation and wow/flutter on the master output" title="Warm saturation plus slow pitch wobble, like a well-loved tape deck">tape</button>
@@ -875,7 +944,7 @@
     </footer>
 
     <div class="rec-note">
-      <p class="rec-note-lede">Recording captures exactly what Presence lets through — press Play, dial it in, then hit record.</p>
+      <p class="rec-note-lede">Recording captures exactly what Presence (the volume) lets through — press Play, dial it in, then hit record.</p>
       <p>Stopping it saves the full mix (uncompressed <code>.wav</code>) and, if you played anything, a <code>.mid</code> file of the notes.</p>
       <p>Turn on <strong>stems</strong> first for separate <code>bed</code> and <code>melody</code> <code>.wav</code> files too, ready for a DAW — roughly triples the memory a long take holds, so it's off by default. A take auto-stops and saves at 15 minutes.</p>
     </div>
@@ -1021,7 +1090,7 @@
   // today's deliberate polytonal texture), but the same global override layers on top
   // of it too, exactly like the main biome, once the user picks one.
   //
-  // NOTE on `transpose` vs. this: transpose (the "Key" dial, ±12 semitones) is a pure
+  // NOTE on `transpose` vs. this: transpose (the "Transpose" dial, ±12 semitones) is a pure
   // PLAYBACK offset applied at the oscillator/frequency level, after a note's frequency
   // is already computed from the key resolved here (see the `* Math.pow(2,
   // state.transpose/12)` at every noteFreq() call site downstream). It never touches
@@ -2446,12 +2515,12 @@
     const label = document.getElementById('loopLabel');
     btn.classList.toggle('recording', looperState==='recording');
     btn.classList.toggle('looping', looperState==='playing');
-    label.textContent = looperState==='recording' ? 'stop' : looperState==='playing' ? 'clear loop' : 'loop';
+    label.textContent = looperState==='recording' ? 'stop' : looperState==='playing' ? 'clear loop' : 'phrase loop';
     // aria-label is the button's accessible name and overrides its visible text content, so
     // it has to be updated by hand right alongside that text — otherwise a screen reader
-    // announces "Record a melody loop" forever, regardless of looperState.
-    btn.setAttribute('aria-label', looperState==='recording' ? 'Stop recording melody loop'
-      : looperState==='playing' ? 'Clear the looping melody' : 'Record a melody loop');
+    // announces "Record a phrase loop" forever, regardless of looperState.
+    btn.setAttribute('aria-label', looperState==='recording' ? 'Stop recording phrase loop'
+      : looperState==='playing' ? 'Clear the looping phrase' : 'Record a phrase loop');
     btn.setAttribute('aria-pressed', String(looperState!=='idle'));
   }
   function clearLooperTimers(){
@@ -3143,10 +3212,10 @@
     const statusEl = document.getElementById('recStatus');
     if(btn){
       btn.classList.remove('recording'); btn.disabled = false;
-      btn.setAttribute('aria-label', 'Capture a seamless loop export');
+      btn.setAttribute('aria-label', 'Capture a seamless export');
       btn.setAttribute('aria-pressed', 'false');
     }
-    if(label) label.textContent = 'loop export';
+    if(label) label.textContent = 'seamless export';
     if(lenSelect) lenSelect.disabled = false;
     if(statusEl) statusEl.textContent = '';
     setLoopCaptureLocks(false);
@@ -3176,7 +3245,7 @@
 
     btn.classList.add('recording');
     label.textContent = 'cancel';
-    btn.setAttribute('aria-label', 'Cancel loop export capture');
+    btn.setAttribute('aria-label', 'Cancel seamless export capture');
     btn.setAttribute('aria-pressed', 'true');
     if(lenSelect) lenSelect.disabled = true;
     setLoopCaptureLocks(true);
@@ -3217,7 +3286,7 @@
     const statusEl = document.getElementById('recStatus');
     if(btn){
       btn.classList.remove('recording'); btn.disabled = true;
-      btn.setAttribute('aria-label', 'Saving loop export…');
+      btn.setAttribute('aria-label', 'Saving seamless export…');
       btn.setAttribute('aria-pressed', 'false');
     }
     if(label) label.textContent = 'saving…';
@@ -3536,6 +3605,33 @@
     layersToggle.setAttribute('aria-expanded', String(willShow));
   });
 
+  // ---- first-run hint: shown once, dismissed permanently, reachable again via the "?"
+  // beside the wordmark. Kept under its own localStorage key — not inside driftbed-state —
+  // so a corrupt/cleared sound state can never accidentally bring it back or hide it. It is
+  // plain flow content, not a modal: nothing under it is ever blocked, and it carries no
+  // focus trap. ----
+  const FIRST_RUN_KEY = 'driftbed-hint-dismissed';
+  const firstRunEl = document.getElementById('firstRun');
+  const firstRunClose = document.getElementById('firstRunClose');
+  const firstRunReopen = document.getElementById('firstRunReopen');
+  function firstRunDismissed(){
+    try{ return localStorage.getItem(FIRST_RUN_KEY)==='1'; }catch(e){ return false; }
+  }
+  function closeFirstRun(){
+    if(!firstRunEl) return;
+    firstRunEl.setAttribute('hidden','');
+    try{ localStorage.setItem(FIRST_RUN_KEY, '1'); }catch(e){}
+  }
+  function openFirstRun(){
+    if(firstRunEl) firstRunEl.removeAttribute('hidden');
+  }
+  if(firstRunEl && !firstRunDismissed()) openFirstRun();
+  if(firstRunClose) firstRunClose.addEventListener('click', closeFirstRun);
+  if(firstRunReopen) firstRunReopen.addEventListener('click', openFirstRun);
+  document.addEventListener('keydown', (e)=>{
+    if(e.key==='Escape' && firstRunEl && !firstRunEl.hasAttribute('hidden')) closeFirstRun();
+  });
+
   function wireChip(id, key, onChange){
     const btn = document.getElementById(id);
     btn.addEventListener('click', ()=>{
@@ -3777,7 +3873,7 @@
     } else if(state.midiOn){
       status.textContent = 'Was enabled last session — click Enable MIDI to reconnect.';
     } else {
-      status.textContent = 'Not connected.';
+      status.textContent = 'Not connected — click Enable MIDI, every page load, to allow it.';
     }
   }
   // Fires when any input/output port connects or disconnects. We don't track which
