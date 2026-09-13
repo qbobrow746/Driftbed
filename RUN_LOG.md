@@ -21,8 +21,8 @@ Orchestrator: Opus 5 (plans + verifies + commits). Builders: Sonnet 5 agents, on
 | P1 | git baseline + .gitignore | done | `71fb96b` |
 | P2 | tools/build-standalone.mjs, tools/check.mjs, AGENT_NOTES.md | done, adversarially verified | `b724a81` |
 | 1 | Recorder hardening (on-demand taps, non-blocking encode, length cap) | done, browser-verified | `6ae4add` |
-| 2 | Presets + shareable permalink (URL hash, localStorage, factory patches) | dispatched | — |
-| 3 | Scale + root decoupled from biome | queued | — |
+| 2 | Presets + shareable permalink (URL hash, localStorage, factory patches) | done, browser-verified | `98ba708` |
+| 3 | Scale + root decoupled from biome | dispatched | — |
 | 4 | Audio-reactive visuals (AnalyserNode) | queued | — |
 | 5 | Generative auto-melodist | queued | — |
 | 6 | Web MIDI input | queued | — |
@@ -45,6 +45,14 @@ width control, "song mode" arc across biomes.
   `mobile-web-app-capable` matched `apple-mobile-web-app-capable` as a substring. Fixed by wrapping
   the block in paired `<!-- installable app metadata -->` / `<!-- /... -->` comments. Lesson for
   later units: a "contains" match on an HTML attribute value can collide with a longer name.
+- Verification trap hit during unit 2: assigning `location.href` to a URL whose path matches the
+  current page only changes the hash — no reload, so boot never re-runs and a "restored" state is
+  really just the state already on screen. Force a real boot (`location.hash = ...` then
+  `location.reload()`), and make the test unambiguous by seeding localStorage with a *different*
+  state than the permalink encodes.
+- `applyStateToUI()` now exists (added in unit 2) as the single place that pushes `state` into every
+  control. Any later unit adding a state field must extend it, plus `sanitizeState()` and the
+  permalink payload, or the field silently won't survive a preset/permalink load.
 - Browser verification recipe that worked well for unit 1, reuse it: serve with
   `cd pwa && python3 -m http.server 8743`, open `http://localhost:8743/index.html`, then drive the
   app by `document.getElementById('...').click()` from the JS console tool. To prove a node isn't

@@ -105,7 +105,7 @@
   }
 
   /* biome totems */
-  .totems-row{ position:relative; display:flex; align-items:center; justify-content:center; gap:.6rem; }
+  .totems-row{ position:relative; display:flex; align-items:center; justify-content:center; gap:.6rem; flex-wrap:wrap; }
   .totems{ display:flex; gap:.6rem; align-self:center; flex-wrap:wrap; justify-content:center; }
   .totem{
     width:2.4rem; height:2.4rem; border-radius:999px;
@@ -440,6 +440,40 @@
         <input type="range" class="range" id="blendAmount" min="0" max="100" value="0" aria-label="Blend amount" />
         <div class="fader-ends"><span>none</span><span>even mix</span></div>
       </div>
+      <button class="side-tab" id="tuningTab" aria-expanded="false" aria-controls="tuningPopover">tuning</button>
+      <div class="popover" id="tuningPopover" hidden>
+        <div class="popover-title">Root &amp; scale</div>
+        <select id="keyRootSelect" aria-label="Root note — overrides the biome's default key">
+          <option value="">Follow biome</option>
+          <option value="0">C</option>
+          <option value="1">C#</option>
+          <option value="2">D</option>
+          <option value="3">D#</option>
+          <option value="4">E</option>
+          <option value="5">F</option>
+          <option value="6">F#</option>
+          <option value="7">G</option>
+          <option value="8">G#</option>
+          <option value="9">A</option>
+          <option value="10">A#</option>
+          <option value="11">B</option>
+        </select>
+        <select id="keyScaleSelect" aria-label="Scale or mode — overrides the biome's default key">
+          <option value="">Follow biome</option>
+          <option value="major">Major (Ionian)</option>
+          <option value="dorian">Dorian</option>
+          <option value="phrygian">Phrygian</option>
+          <option value="lydian">Lydian</option>
+          <option value="mixolydian">Mixolydian</option>
+          <option value="minor">Minor (Aeolian)</option>
+          <option value="harmonicMinor">Harmonic Minor</option>
+          <option value="melodicMinor">Melodic Minor</option>
+          <option value="majorPentatonic">Major Pentatonic</option>
+          <option value="minorPentatonic">Minor Pentatonic</option>
+          <option value="wholeTone">Whole Tone</option>
+        </select>
+        <p class="popover-hint">Sets the root note and scale independently of the biome — pick "Follow biome" on either to go back to its default. The Key dial below still transposes playback on top of this.</p>
+      </div>
       <button class="side-tab" id="presetsTab" aria-expanded="false" aria-controls="presetsPopover">presets</button>
       <div class="popover" id="presetsPopover" hidden>
         <div class="popover-title">Presets</div>
@@ -634,36 +668,64 @@
     return root * Math.pow(2, semitone/12);
   }
 
+  // ---------- scale table ----------
+  // Named scales as semitone-offset arrays from a root — the same shape every biome's
+  // own `scale` array already used. `label` is the display fragment that follows a root
+  // note name in a readout (e.g. desert's SCALE_DEFS.harmonicMinor.label is
+  // 'harmonic minor', combining with 'E' to read "E harmonic minor", exactly like the
+  // biome's original hardcoded `label` string).
+  const SCALE_DEFS = {
+    major:           { label:'major',            semis:[0,2,4,5,7,9,11] },  // ionian
+    dorian:          { label:'dorian',           semis:[0,2,3,5,7,9,10] },
+    phrygian:        { label:'phrygian',         semis:[0,1,3,5,7,8,10] },
+    lydian:          { label:'lydian',           semis:[0,2,4,6,7,9,11] },
+    mixolydian:      { label:'mixolydian',       semis:[0,2,4,5,7,9,10] },
+    minor:           { label:'minor',            semis:[0,2,3,5,7,8,10] },  // aeolian / natural minor
+    harmonicMinor:   { label:'harmonic minor',   semis:[0,2,3,5,7,8,11] },
+    melodicMinor:    { label:'melodic minor',    semis:[0,2,3,5,7,9,11] },
+    majorPentatonic: { label:'major pentatonic', semis:[0,2,4,7,9] },
+    minorPentatonic: { label:'minor pentatonic', semis:[0,3,5,7,10] },
+    wholeTone:       { label:'whole tone',       semis:[0,2,4,6,8,10] }
+  };
+  // Display names for the "tuning" popover's scale <select> — the names musicians would
+  // recognize, keyed the same as SCALE_DEFS.
+  const SCALE_UI_LABELS = {
+    major:'Major (Ionian)', dorian:'Dorian', phrygian:'Phrygian', lydian:'Lydian',
+    mixolydian:'Mixolydian', minor:'Minor (Aeolian)', harmonicMinor:'Harmonic Minor',
+    melodicMinor:'Melodic Minor', majorPentatonic:'Major Pentatonic',
+    minorPentatonic:'Minor Pentatonic', wholeTone:'Whole Tone'
+  };
+
   const BIOMES = {
-    desert: { name:'Desert', mode:'Dune Drift', label:'E harmonic minor', root:82.407, pc:4, scale:[0,2,3,5,7,8,11],
+    desert: { name:'Desert', mode:'Dune Drift', label:'E harmonic minor', root:82.407, pc:4, scaleKey:'harmonicMinor', scale:SCALE_DEFS.harmonicMinor.semis,
       chords:[{deg:0,seventh:true},{deg:3,seventh:true},{deg:4,seventh:true},{deg:0,seventh:true}], chordDur:46, crossfade:9,
       accent:'#e08a4f', deep:'#4a2413', driftColor:'#d97a3a', driftSpeed:60000,
       noise:{type:'bandpass', freq:1200, q:0.7, gust:9},
       reverb:{dur:2.0, decay:4.2, tone:'none'},
       echo:{time:0.11, feedback:0.12, wet:0.05},
       motion:'shimmer', moteCount:6, alphaScale:0.9 },
-    snow: { name:'Snow', mode:'Frostlight', label:'C lydian', root:65.406, pc:0, scale:[0,2,4,6,7,9,11],
+    snow: { name:'Snow', mode:'Frostlight', label:'C lydian', root:65.406, pc:0, scaleKey:'lydian', scale:SCALE_DEFS.lydian.semis,
       chords:[{deg:0},{deg:1},{deg:0},{deg:4}], chordDur:54, crossfade:11,
       accent:'#a7dced', deep:'#17313a', driftColor:'#c9eaf5', driftSpeed:42000,
       noise:{type:'lowpass', freq:900, q:0.5, gust:14},
       reverb:{dur:6.0, decay:2.0, tone:'bright'},
       echo:{time:0.30, feedback:0.32, wet:0.10},
       motion:'fall', moteCount:8, alphaScale:1.0 },
-    oak: { name:'Oak Forest', mode:'Green Canopy', label:'G major', root:97.999, pc:7, scale:[0,2,4,5,7,9,11],
+    oak: { name:'Oak Forest', mode:'Green Canopy', label:'G major', root:97.999, pc:7, scaleKey:'major', scale:SCALE_DEFS.major.semis,
       chords:[{deg:0},{deg:5},{deg:3},{deg:4}], chordDur:40, crossfade:7,
       accent:'#8bbd73', deep:'#1f351a', driftColor:'#b8c95a', driftSpeed:50000,
       noise:{type:'bandpass', freq:2500, q:1.1, gust:5},
       reverb:{dur:3.2, decay:2.8, tone:'warm'},
       echo:{time:0.19, feedback:0.22, wet:0.08},
       motion:'flicker', moteCount:9, alphaScale:1.0 },
-    cave: { name:'Cave', mode:'Hollow Deep', label:'D minor', root:73.416, pc:2, scale:[0,2,3,5,7,8,10],
+    cave: { name:'Cave', mode:'Hollow Deep', label:'D minor', root:73.416, pc:2, scaleKey:'minor', scale:SCALE_DEFS.minor.semis,
       chords:[{deg:0},{deg:3},{deg:5},{deg:0}], chordDur:60, crossfade:13,
       accent:'#7a90a8', deep:'#12181f', driftColor:'#6a7f96', driftSpeed:90000,
       noise:{type:'lowpass', freq:450, q:0.4, gust:20},
       reverb:{dur:8.5, decay:1.5, tone:'dark'}, subDrone:true,
       echo:{time:0.52, feedback:0.58, wet:0.16},
       motion:'still', moteCount:5, alphaScale:0.6 },
-    aurora: { name:'Aurora', mode:'Skyfall', label:'B lydian', root:61.735, pc:11, scale:[0,2,4,6,7,9,11],
+    aurora: { name:'Aurora', mode:'Skyfall', label:'B lydian', root:61.735, pc:11, scaleKey:'lydian', scale:SCALE_DEFS.lydian.semis,
       chords:[{deg:0},{deg:4},{deg:1},{deg:0}], chordDur:50, crossfade:12,
       accent:'#c9a8e8', deep:'#241a3a', driftColor:'#7fd9c4', driftSpeed:22000,
       noise:{type:'bandpass', freq:4200, q:0.5, gust:11},
@@ -676,11 +738,55 @@
   const CHORD_TONES_7 = [0,2,4,6]; // + the diatonic 7th — quality (maj7/min7/dom7/m7b5/mM7) falls out of the scale automatically
   const MELODY_DEGREES = [0,2,4,6,7]; // 1-3-5-7 (a real 7th-chord voicing) plus the root an octave up
   const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-  function noteNameForDegree(biome, degree){
-    const scale = biome.scale, n = scale.length;
+  // Takes anything shaped like { scale, pc } — either a raw BIOMES entry or a resolved
+  // key from currentKey() below; both carry the same two fields.
+  function noteNameForDegree(key, degree){
+    const scale = key.scale, n = scale.length;
     const idx = ((degree % n) + n) % n;
-    const semitone = (biome.pc + scale[idx]) % 12;
+    const semitone = (key.pc + scale[idx]) % 12;
     return NOTE_NAMES[semitone];
+  }
+
+  // Deriving the root frequency for a chosen pitch class: BIOMES roots are low bass
+  // frequencies pinned to a specific octave (e.g. desert's E1 = 82.407Hz at pc 4). To
+  // change pitch class without the drone jumping octaves, shift by the SIGNED semitone
+  // distance from the biome's own pc to the target pc, folded into (-6, 6] — the
+  // smallest possible move in either direction — rather than always shifting upward
+  // (which could be up to 11 semitones, nearly a full octave).
+  function rootFreqForPc(biome, pc){
+    if(pc === biome.pc) return biome.root;
+    const semis = ((pc - biome.pc + 6 + 1200) % 12) - 6;
+    return biome.root * Math.pow(2, semis/12);
+  }
+
+  // ---------- effective key: biome defaults + optional root/scale override ----------
+  // The single place that resolves what's actually playing right now. Every consumer of
+  // pitch material (pads, accents, blend, arp, held-note retuning, the chord editor)
+  // should go through this — or through currentChord()'s `key`, which calls this — so a
+  // root/scale override applies everywhere consistently instead of some call sites
+  // silently still reading the biome's hardcoded default.
+  //
+  // `biomeName` defaults to the main biome (state.biome). Pass state.blendBiome to
+  // resolve the blended second biome's key instead — it still gets its OWN default
+  // pc/scale when the user hasn't overridden anything (so the default blend keeps
+  // today's deliberate polytonal texture), but the same global override layers on top
+  // of it too, exactly like the main biome, once the user picks one.
+  //
+  // NOTE on `transpose` vs. this: transpose (the "Key" dial, ±12 semitones) is a pure
+  // PLAYBACK offset applied at the oscillator/frequency level, after a note's frequency
+  // is already computed from the key resolved here (see the `* Math.pow(2,
+  // state.transpose/12)` at every noteFreq() call site downstream). It never touches
+  // note names, chord names, or the scale readout — those all come from currentKey()/
+  // chordQualityLabel() untransposed. Keep that split: don't "fix" transpose to rewrite
+  // names, and don't fold the root/scale override into transpose.
+  function currentKey(biomeName){
+    const biome = BIOMES[biomeName || state.biome];
+    const pc = (state.keyRoot === '') ? biome.pc : state.keyRoot;
+    const scaleKey = (state.keyScale === '') ? null : state.keyScale;
+    const scale = scaleKey ? SCALE_DEFS[scaleKey].semis : biome.scale;
+    const scaleLabel = scaleKey ? SCALE_DEFS[scaleKey].label : SCALE_DEFS[biome.scaleKey].label;
+    const root = rootFreqForPc(biome, pc);
+    return { root, scale, pc, label: NOTE_NAMES[pc] + ' ' + scaleLabel };
   }
 
   function hexToRgb(hex){
@@ -694,6 +800,9 @@
   const state = {
     biome:'desert', presence:35, density:30, air:45, warmth:40,
     intensity:50, transpose:0, autofade:'0',
+    // keyRoot/keyScale: '' means "follow the biome's default" for each independently —
+    // see currentKey() above, which resolves these on top of BIOMES[state.biome].
+    keyRoot:'', keyScale:'',
     accentsOn:true, windOn:true, echoOn:true, colorDriftOn:true,
     melodyMode:'notes', voice:'soft',
     arpRate:'med', arpPattern:'up',
@@ -947,7 +1056,7 @@
     masterGain.gain.linearRampToValueAtTime(Math.max(0,target), now + (glide||2.5));
   }
 
-  function spawnChordVoices(biome, chord, fadeInSecs, destBus){
+  function spawnChordVoices(biome, key, chord, fadeInSecs, destBus){
     const now = ctx.currentTime;
     const chordDeg = chord.deg;
     const tones = chord.seventh ? CHORD_TONES_7 : CHORD_TONES;
@@ -961,7 +1070,7 @@
     tones.forEach((step, i)=>{
       const degree = chordDeg + step;
       const octave = i===0 ? 0 : 1;
-      const freq = noteFreq(biome.root, biome.scale, degree, octave);
+      const freq = noteFreq(key.root, key.scale, degree, octave);
       [ -6, 0, 6 ].forEach((detuneBase)=>{
         const osc = ctx.createOscillator();
         osc.type = (Math.random()<0.5) ? 'triangle' : 'sine';
@@ -1036,9 +1145,13 @@
   }
   function playBlendChord(){
     const biome = BIOMES[state.blendBiome];
+    // Resolved against the blend biome's OWN defaults (so an un-overridden blend keeps
+    // today's deliberate polytonal texture), with any global root/scale override layered
+    // on top exactly like the main biome — see currentKey()'s doc comment.
+    const key = currentKey(state.blendBiome);
     const chord = biome.chords[blendChordIndex % biome.chords.length];
     const outgoing = blendActiveVoices.slice();
-    spawnChordVoices(biome, chord, biome.crossfade, blendGain); // pushes itself into blendActiveVoices
+    spawnChordVoices(biome, key, chord, biome.crossfade, blendGain); // pushes itself into blendActiveVoices
     outgoing.forEach(g => fadeOutGroup(g, biome.crossfade, blendActiveVoices));
   }
   function scheduleBlendChord(){
@@ -1064,10 +1177,11 @@
 
   function playCurrentChord(fadeSecs){
     const biome = BIOMES[state.biome];
+    const key = currentKey();
     const chord = biome.chords[chordIndex % biome.chords.length];
     const secs = fadeSecs!==undefined ? fadeSecs : biome.crossfade;
     const outgoing = activeVoices.slice();
-    spawnChordVoices(biome, chord, secs);
+    spawnChordVoices(biome, key, chord, secs);
     outgoing.forEach(g => fadeOutGroup(g, secs));
     updateMelodyPads();
     retuneHeldNotes();
@@ -1115,18 +1229,19 @@
   function playSparkle(){
     if(!state.accentsOn) return;
     const biome = BIOMES[state.biome];
+    const key = currentKey();
     const chord = biome.chords[chordIndex % biome.chords.length];
     const step = CHORD_TONES[Math.floor(Math.random()*CHORD_TONES.length)];
     const degree = chord.deg + step;
     const octave = 3 + Math.floor(Math.random()*2);
-    let freq = noteFreq(biome.root, biome.scale, degree, octave);
+    let freq = noteFreq(key.root, key.scale, degree, octave);
     freq *= Math.pow(2, state.transpose/12);
     switch(state.biome){
       case 'desert': playDesertAccent(freq); break;
       case 'snow': playSnowAccent(freq); break;
       case 'oak': playOakAccent(freq); break;
       case 'cave': playCaveAccent(freq); break;
-      case 'aurora': playAuroraAccent(biome, chord.deg); break;
+      case 'aurora': playAuroraAccent(key, chord.deg); break;
     }
   }
 
@@ -1201,11 +1316,11 @@
   }
 
   // fast ascending shimmer cascade
-  function playAuroraAccent(biome, chordDeg){
+  function playAuroraAccent(key, chordDeg){
     const t = ctx.currentTime;
     const degrees = [0,2,4,7];
     degrees.forEach((step,i)=>{
-      const freq = noteFreq(biome.root, biome.scale, chordDeg+step, 4) * Math.pow(2, state.transpose/12);
+      const freq = noteFreq(key.root, key.scale, chordDeg+step, 4) * Math.pow(2, state.transpose/12);
       const start = t + i*0.09;
       const o = ctx.createOscillator(); o.type='sine'; o.frequency.value = freq;
       const g = ctx.createGain();
@@ -1278,41 +1393,46 @@
   }
   function currentChord(){
     const biome = BIOMES[state.biome];
-    return { biome, chord: biome.chords[chordIndex % biome.chords.length] };
+    return { biome, chord: biome.chords[chordIndex % biome.chords.length], key: currentKey() };
   }
 
   function updateMelodyPads(){
-    const { biome, chord } = currentChord();
+    const { chord, key } = currentChord();
     const isChordMode = state.melodyMode==='chord';
     document.querySelectorAll('.pad').forEach((btn)=>{
       const i = Number(btn.dataset.pad);
       const deg = degreeForPad(i, chord);
       btn.querySelector('.note').textContent = isChordMode
-        ? chordQualityLabel(biome, { deg, seventh: state.chordSevenths[i] })
-        : noteNameForDegree(biome, deg);
+        ? chordQualityLabel(key, { deg, seventh: state.chordSevenths[i] })
+        : noteNameForDegree(key, deg);
     });
-    updateChordReadout(biome, chord);
+    updateChordReadout(chord, key);
+    // a diatonic 7th only means something in a 7-note scale — hide the per-pad 7th
+    // toggles entirely outside of one, on top of the existing chord-mode-only visibility.
+    chordSeventhsRow.hidden = (state.melodyMode!=='chord') || (key.scale.length!==7);
   }
-  function updateChordReadout(biome, chord){
+  function updateChordReadout(chord, key){
     const el = document.getElementById('chordReadout');
     if(!el) return;
-    if(!biome || !chord){ ({ biome, chord } = currentChord()); }
-    el.textContent = chordQualityLabel(biome, chord);
+    if(!chord || !key){ ({ chord, key } = currentChord()); }
+    el.textContent = chordQualityLabel(key, chord);
   }
 
-  // chord editor: tap a slot to cycle that chord's root through the 7 degrees of the
+  // chord editor: tap a slot to cycle that chord's root through the degrees of the
   // current key — edits are session-only (BIOMES resets to its defaults on reload).
   // labels a chord by stacking its own diatonic tones (1-3-5, or 1-3-5-7 when
   // chord.seventh is on) and naming the interval pattern — this is what makes
-  // "7th" always come out as the correct maj7/min7/dom7/m7b5/mM7 for the scale.
-  function chordQualityLabel(biome, chord){
-    const root = noteNameForDegree(biome, chord.deg);
-    if(!chord.seventh) return root;
+  // "7th" always come out as the correct maj7/min7/dom7/m7b5/mM7 for a 7-note scale.
+  // For any other scale size (pentatonic, whole tone, …) "stacked thirds" doesn't mean
+  // anything, so this just returns the bare root name instead of a nonsense quality.
+  function chordQualityLabel(key, chord){
+    const root = noteNameForDegree(key, chord.deg);
+    if(!chord.seventh || key.scale.length!==7) return root;
     const semis = CHORD_TONES_7.map(step=>{
-      const n = biome.scale.length;
+      const n = key.scale.length;
       const idx = (((chord.deg+step) % n) + n) % n;
       const oct = Math.floor((chord.deg+step) / n);
-      return biome.scale[idx] + 12*oct;
+      return key.scale[idx] + 12*oct;
     });
     const third = semis[1]-semis[0], fifth = semis[2]-semis[0], seventh = semis[3]-semis[0];
     let quality = '7';
@@ -1325,6 +1445,8 @@
   }
   function updateChordEditor(){
     const biome = BIOMES[state.biome];
+    const key = currentKey();
+    const nonStandard = key.scale.length!==7; // no diatonic "7th" concept outside 7-note scales
     const wrap = document.getElementById('chordSlots');
     wrap.innerHTML = '';
     const activeIdx = chordIndex % biome.chords.length;
@@ -1334,12 +1456,12 @@
 
       const rootBtn = document.createElement('button');
       rootBtn.className = 'seg-btn chord-slot';
-      rootBtn.textContent = chordQualityLabel(biome, chord);
+      rootBtn.textContent = chordQualityLabel(key, chord);
       rootBtn.setAttribute('aria-label', `Chord ${idx+1} of the loop${idx===activeIdx ? ' — playing now' : ''} — click to cycle its root through the key`);
       rootBtn.addEventListener('click', (e)=>{
         e.stopPropagation();
-        chord.deg = (chord.deg + 1) % biome.scale.length;
-        rootBtn.textContent = chordQualityLabel(biome, chord);
+        chord.deg = (chord.deg + 1) % key.scale.length;
+        rootBtn.textContent = chordQualityLabel(key, chord);
         if(state.playing && idx === (chordIndex % biome.chords.length)) playCurrentChord(2.5);
         updateMelodyPads();
       });
@@ -1347,6 +1469,7 @@
       const seventhBtn = document.createElement('button');
       seventhBtn.className = 'seg-btn chord-seventh' + (chord.seventh ? ' on' : '');
       seventhBtn.textContent = '7th';
+      seventhBtn.hidden = nonStandard;
       seventhBtn.setAttribute('aria-pressed', String(!!chord.seventh));
       seventhBtn.setAttribute('aria-label', `Chord ${idx+1} — toggle its diatonic 7th on or off`);
       seventhBtn.addEventListener('click', (e)=>{
@@ -1354,7 +1477,7 @@
         chord.seventh = !chord.seventh;
         seventhBtn.classList.toggle('on', chord.seventh);
         seventhBtn.setAttribute('aria-pressed', String(chord.seventh));
-        rootBtn.textContent = chordQualityLabel(biome, chord);
+        rootBtn.textContent = chordQualityLabel(key, chord);
         if(state.playing && idx === (chordIndex % biome.chords.length)) playCurrentChord(2.5);
         updateMelodyPads();
       });
@@ -1368,13 +1491,13 @@
   // re-pitches every currently held note (notes/chord mode) to match whatever
   // is now playing — called on chord advance, biome switch, and key shift.
   function retuneHeldNotes(){
-    const { biome, chord } = currentChord();
+    const { chord, key } = currentChord();
     Object.values(activeMelodyNotes).forEach(handle=>{
       if(handle.arp) return; // arp reads the live chord fresh on every step already
       const baseDeg = degreeForPad(handle.pad, chord);
       handle.offsets.forEach((off, idx)=>{
         const deg = baseDeg + off;
-        const freq = noteFreq(biome.root, biome.scale, deg, handle.octave) * Math.pow(2, state.transpose/12);
+        const freq = noteFreq(key.root, key.scale, deg, handle.octave) * Math.pow(2, state.transpose/12);
         retuneOscBank(handle.voices[idx].fundamentalOscs, freq, 0.15);
         retuneOscBank(handle.voices[idx].bloomOscs, freq*2, 0.15);
       });
@@ -1385,7 +1508,7 @@
     initAudio();
     if(ctx.state==='suspended') ctx.resume();
     if(activeMelodyNotes[i]) return;
-    const { biome, chord } = currentChord();
+    const { chord, key } = currentChord();
     const baseDeg = degreeForPad(i, chord);
 
     if(state.melodyMode==='arp'){
@@ -1407,7 +1530,7 @@
     const voices = [], gains = [], blooms = [], midiNotes = [];
     offsets.forEach(off=>{
       const deg = baseDeg + off;
-      const freq = noteFreq(biome.root, biome.scale, deg, octave) * Math.pow(2, state.transpose/12);
+      const freq = noteFreq(key.root, key.scale, deg, octave) * Math.pow(2, state.transpose/12);
 
       // fundamental: a slow fade in rather than a snap
       const g = ctx.createGain();
@@ -1451,7 +1574,7 @@
   function arpFireStep(){
     const n = heldArpNotes.length;
     if(n===0) return;
-    const { biome, chord } = currentChord();
+    const { chord, key } = currentChord();
     let idx;
     if(state.arpPattern==='random'){
       idx = Math.floor(Math.random()*n);
@@ -1461,7 +1584,7 @@
     }
     const note = heldArpNotes[idx];
     const deg = degreeForPad(note.pad, chord);
-    const freq = noteFreq(biome.root, biome.scale, deg, 4) * Math.pow(2, state.transpose/12);
+    const freq = noteFreq(key.root, key.scale, deg, 4) * Math.pow(2, state.transpose/12);
     const t = ctx.currentTime;
     const panner = ctx.createStereoPanner();
     panner.pan.value = (note.pad-2)*0.16;
@@ -1591,7 +1714,9 @@
     if(state.biome===name) return;
     state.biome = name;
     const biome = BIOMES[name];
-    document.getElementById('scaleReadout').textContent = biome.label;
+    // state.keyRoot/keyScale are untouched here, so an active override carries over to
+    // the new biome unchanged — only the "follow biome" parts of the key move.
+    document.getElementById('scaleReadout').textContent = currentKey().label;
     document.getElementById('modeReadout').textContent = biome.mode;
     document.querySelectorAll('.totem').forEach(b=>b.classList.toggle('active', b.dataset.biome===name));
     document.documentElement.style.setProperty('--accent', biome.accent);
@@ -1616,7 +1741,7 @@
       if(chordTimer) clearTimeout(chordTimer);
       const outgoing = activeVoices.slice();
       outgoing.forEach(g => fadeOutGroup(g, 8));
-      spawnChordVoices(biome, biome.chords[0], 8);
+      spawnChordVoices(biome, currentKey(), biome.chords[0], 8);
       scheduleNextChord();
     }
     updateMelodyPads();
@@ -2030,6 +2155,15 @@
     out.intensity = Math.round(clampNum(input.intensity, 0, 100, d.intensity));
     out.transpose = Math.round(clampNum(input.transpose, -12, 12, d.transpose));
     out.autofade = ['0','120','300','600','1200','1800'].includes(String(input.autofade)) ? String(input.autofade) : d.autofade;
+    // keyRoot: '' (follow biome) or an integer pitch class 0-11 — anything else
+    // (missing, wrong type, out of range) falls back to the follow-biome default.
+    out.keyRoot = (typeof input.keyRoot==='number' && Number.isInteger(Math.round(input.keyRoot))
+      && Math.round(input.keyRoot)>=0 && Math.round(input.keyRoot)<=11)
+      ? Math.round(input.keyRoot) : d.keyRoot;
+    // keyScale: '' (follow biome) or a known SCALE_DEFS key — an unrecognized name is
+    // rejected rather than trusted, same as biome/blendBiome above.
+    out.keyScale = (typeof input.keyScale==='string' && (input.keyScale==='' || SCALE_DEFS[input.keyScale]))
+      ? input.keyScale : d.keyScale;
     out.accentsOn = typeof input.accentsOn==='boolean' ? input.accentsOn : d.accentsOn;
     out.windOn = typeof input.windOn==='boolean' ? input.windOn : d.windOn;
     out.echoOn = typeof input.echoOn==='boolean' ? input.echoOn : d.echoOn;
@@ -2281,9 +2415,8 @@
   const arpSection = document.getElementById('arpSection');
   const chordSeventhsRow = document.getElementById('chordSevenths');
   wireSegGroup('.seg-btn[data-mode]', ()=>{
-    updateMelodyPads();
     arpSection.hidden = state.melodyMode!=='arp';
-    chordSeventhsRow.hidden = state.melodyMode!=='chord';
+    updateMelodyPads(); // also sets chordSeventhsRow.hidden (mode + whether the key is a 7-note scale)
   });
   document.querySelectorAll('.pad-seventh').forEach(btn=>{
     const idx = Number(btn.dataset.idx);
@@ -2322,8 +2455,48 @@
   wirePopoverTab('toneTab','tonePopover');
   wirePopoverTab('chordsTab','chordsPopover');
   wirePopoverTab('blendTab','blendPopover');
+  wirePopoverTab('tuningTab','tuningPopover');
   wirePopoverTab('presetsTab','presetsPopover');
   document.addEventListener('click', closePopovers);
+
+  // root/scale override: re-spawns the currently playing pad drone(s) — main and, if
+  // active, the blended second biome — with the usual crossfade, exactly like a chord
+  // advance or biome switch. Never a hard retune/click. Held notes glide via
+  // retuneHeldNotes(); the arp just reads the new key fresh on its next step already.
+  const keyRootSelect = document.getElementById('keyRootSelect');
+  const keyScaleSelect = document.getElementById('keyScaleSelect');
+  function applyKeyChange(){
+    updateMelodyPads();
+    retuneHeldNotes();
+    updateChordEditor();
+    document.getElementById('scaleReadout').textContent = currentKey().label;
+    if(ctx && state.playing){
+      const biome = BIOMES[state.biome];
+      const key = currentKey();
+      const secs = Math.min(5, biome.crossfade);
+      const outgoing = activeVoices.slice();
+      spawnChordVoices(biome, key, biome.chords[chordIndex % biome.chords.length], secs);
+      outgoing.forEach(g => fadeOutGroup(g, secs));
+      if(state.blendBiome){
+        const blendBiome = BIOMES[state.blendBiome];
+        const blendKey = currentKey(state.blendBiome);
+        const outgoingBlend = blendActiveVoices.slice();
+        spawnChordVoices(blendBiome, blendKey, blendBiome.chords[blendChordIndex % blendBiome.chords.length], secs, blendGain);
+        outgoingBlend.forEach(g => fadeOutGroup(g, secs, blendActiveVoices));
+      }
+    }
+    persist();
+  }
+  keyRootSelect.addEventListener('change', (e)=>{
+    e.stopPropagation();
+    state.keyRoot = e.target.value==='' ? '' : Number(e.target.value);
+    applyKeyChange();
+  });
+  keyScaleSelect.addEventListener('change', (e)=>{
+    e.stopPropagation();
+    state.keyScale = e.target.value;
+    applyKeyChange();
+  });
 
   const blendBiomeSelect = document.getElementById('blendBiomeSelect');
   const blendAmountInput = document.getElementById('blendAmount');
@@ -2477,7 +2650,7 @@
     const biome = BIOMES[state.biome];
     if(biome){
       document.querySelectorAll('.totem').forEach(b=>b.classList.toggle('active', b.dataset.biome===state.biome));
-      document.getElementById('scaleReadout').textContent = biome.label;
+      document.getElementById('scaleReadout').textContent = currentKey().label;
       document.getElementById('modeReadout').textContent = biome.mode;
       document.documentElement.style.setProperty('--accent', biome.accent);
       document.documentElement.style.setProperty('--deep', biome.deep);
@@ -2507,7 +2680,8 @@
     syncSegGroup('rate', 'arpRate');
     syncSegGroup('pattern', 'arpPattern');
     arpSection.hidden = state.melodyMode!=='arp';
-    chordSeventhsRow.hidden = state.melodyMode!=='chord';
+    // chordSeventhsRow.hidden is set below by updateMelodyPads(), which also accounts
+    // for whether the resolved key is a 7-note scale.
 
     syncChip('chipAccents','accentsOn');
     syncChip('chipWind','windOn');
@@ -2526,6 +2700,8 @@
     blendBiomeSelect.value = state.blendBiome;
     blendAmountInput.value = state.blendAmount;
     autofadeSelect.value = state.autofade;
+    keyRootSelect.value = state.keyRoot===''? '' : String(state.keyRoot);
+    keyScaleSelect.value = state.keyScale;
 
     // rebuilds #chordSlots from the (possibly just-restored) BIOMES chord edits, and
     // relabels the melody pads/chord readout to match
