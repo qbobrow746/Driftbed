@@ -159,13 +159,14 @@
   }
   @media (prefers-reduced-motion: reduce){
     .breathe::before, .breathe.playing::before{ animation:none; }
+    .quick-actions button.recording svg{ animation:none; }
   }
   .breathe:focus-visible{ outline:2px solid var(--focus); outline-offset:3px; }
 
   .fader-block{ flex:1 1 auto; display:flex; flex-direction:column; gap:var(--sp-2); }
   .fader-top{ display:flex; justify-content:space-between; align-items:baseline; }
   .fader-label{ font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-dim); }
-  .fader-value{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:.72rem; color:var(--ink-dim); font-variant-numeric:tabular-nums; }
+  .fader-value{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:.72rem; color:var(--ink-dim); font-variant-numeric:tabular-nums; white-space:nowrap; }
 
   .range{
     -webkit-appearance:none; appearance:none;
@@ -402,6 +403,13 @@
     .pad-seventh{ width:2.65rem; }
     .dials{ gap:1rem .9rem; }
     .layers-row{ gap:.45rem; }
+    /* Melody's fader-top packs a label plus a value AND two side-tab buttons (unlike
+       Presence/Intensity's plain label+value), so at phone widths it no longer fits on one
+       line — the value text used to wrap mid-string ("1 · 3 ·" / "5 · 7") right under
+       "MELODY". Let the tools group drop to its own line instead of letting the text itself
+       break. */
+    .melody-block .fader-top{ flex-wrap:wrap; row-gap:.35rem; }
+    .melody-tools{ flex-basis:100%; justify-content:flex-end; flex-wrap:wrap; row-gap:.3rem; }
   }
 </style>
 </head>
@@ -624,11 +632,11 @@
           next chord
         </button>
         <button class="chip" id="chipFreeze" aria-pressed="false" aria-label="Freeze the current chord — pauses the progression indefinitely" title="Pin the current chord: the progression stops advancing until you unfreeze">freeze</button>
-        <button id="loopBtn" aria-label="Record a melody loop">
+        <button id="loopBtn" aria-label="Record a melody loop" aria-pressed="false">
           <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="5" fill="currentColor" stroke="none"/></svg>
           <span id="loopLabel">loop</span>
         </button>
-        <button id="recordBtn" aria-label="Start recording" title="Record the output to a file">
+        <button id="recordBtn" aria-label="Start recording" aria-pressed="false" title="Record the output to a file">
           <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="5" fill="currentColor" stroke="none"/></svg>
           <span id="recordLabel">record</span>
         </button>
@@ -639,7 +647,7 @@
           <option value="60">60s loop</option>
           <option value="120">120s loop</option>
         </select>
-        <button id="loopCaptureBtn" aria-label="Capture a seamless loop export" title="Capture a fixed-length WAV that repeats with no seam — crossfades the tail back over the head. Freezes the current chord for the capture, since a chord change mid-loop can't be hidden. (Not the same as the 'loop' button above, which replays a played performance.)">
+        <button id="loopCaptureBtn" aria-label="Capture a seamless loop export" aria-pressed="false" title="Capture a fixed-length WAV that repeats with no seam — crossfades the tail back over the head. Freezes the current chord for the capture, since a chord change mid-loop can't be hidden. (Not the same as the 'loop' button above, which replays a played performance.)">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 10a6 6 0 1 1 2.3 4.7"/><path d="M4 15.2v-3.5h3.5"/></svg>
           <span id="loopCaptureLabel">loop export</span>
         </button>
@@ -1855,9 +1863,36 @@
     });
   }
 
+  // A pad's ".active" highlight is owned here, by the note lifecycle, rather than by each
+  // input source (pointer, keyboard, the generative performer, the performance looper) —
+  // that way every source lights the pad the same way, including the performer/looper
+  // trigger paths that used to produce sound with no visual response at all. padHoldCount
+  // is a per-pad COUNT, not a boolean, because more than one source can legitimately hold
+  // the same pad at once (e.g. you're holding pad 2 with a finger while the generative
+  // performer independently starts playing pad 2 too) — releasing one holder must not
+  // clear the highlight while another still holds it, so the pad only goes dark when the
+  // count returns to zero. This is separate from activeMelodyNotes' one-voice-per-pad
+  // bookkeeping below (which is about audio and unchanged): a source can gain/lose a
+  // "hold" on a pad even on calls that startMelodyNote/stopMelodyNote otherwise treat as a
+  // no-op (e.g. a second source starting a pad the first source already sounds).
+  const padHoldCount = [0,0,0,0,0];
+  function setPadLit(i, lit){
+    const btn = document.querySelector(`.pad[data-pad="${i}"]`);
+    if(btn) btn.classList.toggle('active', lit);
+  }
+  function padHoldStart(i){
+    if(i==null || i<0 || i>=padHoldCount.length) return;
+    if(padHoldCount[i]++ === 0) setPadLit(i, true);
+  }
+  function padHoldEnd(i){
+    if(i==null || i<0 || i>=padHoldCount.length || padHoldCount[i]===0) return;
+    if(--padHoldCount[i] === 0) setPadLit(i, false);
+  }
+
   function startMelodyNote(i){
     initAudio();
     if(ctx.state==='suspended') ctx.resume();
+    padHoldStart(i);
     if(activeMelodyNotes[i]) return;
     const { chord, key } = currentChord();
     const baseDeg = degreeForPad(i, chord);
@@ -1980,6 +2015,12 @@
   }
 
   function stopMelodyNote(i){
+    padHoldEnd(i);
+    // Another source is still holding this pad — a finger, the computer keyboard, the
+    // looper replaying, or the generative performer. Leave the note sounding for them
+    // instead of cutting it off, which also keeps the lit pad honest: it stays lit only
+    // while something is actually sounding.
+    if(padHoldCount[i] > 0) return;
     const v = activeMelodyNotes[i];
     if(!v) return;
     if(v.arp){
@@ -2055,6 +2096,14 @@
   // look up — and therefore never release — a pad's held voices, or vice versa. Both
   // just add their voices onto the same melodyBus/echoDelay and otherwise don't know
   // the other exists.
+  //
+  // Deliberately, a MIDI note never lights a melody pad. It's not an oversight: a MIDI
+  // note's degree comes from midiNoteToDegree() (fixed to the key/tonic, spanning many
+  // octaves, up to 128 notes at once), while a pad's degree comes from degreeForPad()
+  // (relative to whichever chord is currently playing, only 5 of them). The two degree
+  // spaces agree only by coincidence, so lighting "the pad closest to this note" would
+  // often highlight a pad that isn't the chord tone actually sounding — worse than no
+  // feedback at all. The MIDI popover's connection status is the honest indicator here.
   const activeMidiNotes = {};
   let midiSustainOn = false;
   const midiSustainedOff = new Set(); // notes released while the sustain pedal was held
@@ -2176,6 +2225,12 @@
     btn.classList.toggle('recording', looperState==='recording');
     btn.classList.toggle('looping', looperState==='playing');
     label.textContent = looperState==='recording' ? 'stop' : looperState==='playing' ? 'clear loop' : 'loop';
+    // aria-label is the button's accessible name and overrides its visible text content, so
+    // it has to be updated by hand right alongside that text — otherwise a screen reader
+    // announces "Record a melody loop" forever, regardless of looperState.
+    btn.setAttribute('aria-label', looperState==='recording' ? 'Stop recording melody loop'
+      : looperState==='playing' ? 'Clear the looping melody' : 'Record a melody loop');
+    btn.setAttribute('aria-pressed', String(looperState!=='idle'));
   }
   function clearLooperTimers(){
     looperTimers.forEach(id=>clearTimeout(id));
@@ -2781,6 +2836,10 @@
       startRecorderTaps();
       btn.classList.add('recording');
       label.textContent = 'stop & save';
+      // Same reason as setLooperUI(): aria-label is this button's accessible name, so it
+      // must track the visible label by hand.
+      btn.setAttribute('aria-label', 'Stop and save recording');
+      btn.setAttribute('aria-pressed', 'true');
       if(stemsChip) stemsChip.disabled = true;
       // An ordinary recording and a loop capture share the same underlying tap/chunk
       // pipeline and recordState, so only one can run at a time.
@@ -2803,6 +2862,8 @@
     btn.classList.remove('recording');
     btn.disabled = true;
     label.textContent = 'saving…';
+    btn.setAttribute('aria-label', 'Saving recording…');
+    btn.setAttribute('aria-pressed', 'false');
     if(statusEl){ statusEl.textContent = 'saving…'; statusEl.classList.remove('warn'); }
 
     const ts = Date.now();
@@ -2828,6 +2889,7 @@
     if(loopBtn) loopBtn.disabled = false;
     if(loopLenSel) loopLenSel.disabled = false;
     label.textContent = 'record';
+    btn.setAttribute('aria-label', 'Start recording');
     if(statusEl) statusEl.textContent = '';
     recordState = 'idle';
   }
@@ -2857,7 +2919,11 @@
     const label = document.getElementById('loopCaptureLabel');
     const lenSelect = document.getElementById('loopLen');
     const statusEl = document.getElementById('recStatus');
-    if(btn){ btn.classList.remove('recording'); btn.disabled = false; }
+    if(btn){
+      btn.classList.remove('recording'); btn.disabled = false;
+      btn.setAttribute('aria-label', 'Capture a seamless loop export');
+      btn.setAttribute('aria-pressed', 'false');
+    }
     if(label) label.textContent = 'loop export';
     if(lenSelect) lenSelect.disabled = false;
     if(statusEl) statusEl.textContent = '';
@@ -2888,6 +2954,8 @@
 
     btn.classList.add('recording');
     label.textContent = 'cancel';
+    btn.setAttribute('aria-label', 'Cancel loop export capture');
+    btn.setAttribute('aria-pressed', 'true');
     if(lenSelect) lenSelect.disabled = true;
     setLoopCaptureLocks(true);
 
@@ -2925,7 +2993,11 @@
     const btn = document.getElementById('loopCaptureBtn');
     const label = document.getElementById('loopCaptureLabel');
     const statusEl = document.getElementById('recStatus');
-    if(btn){ btn.classList.remove('recording'); btn.disabled = true; }
+    if(btn){
+      btn.classList.remove('recording'); btn.disabled = true;
+      btn.setAttribute('aria-label', 'Saving loop export…');
+      btn.setAttribute('aria-pressed', 'false');
+    }
     if(label) label.textContent = 'saving…';
     if(statusEl){ statusEl.textContent = 'saving…'; statusEl.classList.remove('warn'); }
 
@@ -3385,10 +3457,13 @@
   });
 
   // melody pads: pointer (mouse/touch) + keyboard (A S D F G)
+  // Pad highlighting itself is handled inside startMelodyNote/stopMelodyNote (see
+  // padHoldStart/padHoldEnd above) — these handlers only need to trigger the note and log
+  // it for the looper.
   document.querySelectorAll('.pad').forEach(btn=>{
     const i = Number(btn.dataset.pad);
-    btn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); startMelodyNote(i); looperLog('on', i); btn.classList.add('active'); });
-    const release = ()=>{ stopMelodyNote(i); looperLog('off', i); btn.classList.remove('active'); };
+    btn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); startMelodyNote(i); looperLog('on', i); });
+    const release = ()=>{ stopMelodyNote(i); looperLog('off', i); };
     btn.addEventListener('pointerup', release);
     btn.addEventListener('pointerleave', release);
     btn.addEventListener('pointercancel', release);
@@ -3404,8 +3479,6 @@
       const i = MELODY_KEY_MAP[k];
       startMelodyNote(i);
       looperLog('on', i);
-      const btn = document.querySelector(`.pad[data-pad="${i}"]`);
-      if(btn) btn.classList.add('active');
     }
   });
   document.addEventListener('keyup', (e)=>{
@@ -3414,8 +3487,6 @@
       const i = MELODY_KEY_MAP[k];
       stopMelodyNote(i);
       looperLog('off', i);
-      const btn = document.querySelector(`.pad[data-pad="${i}"]`);
-      if(btn) btn.classList.remove('active');
     }
   });
   document.getElementById('loopBtn').addEventListener('click', toggleLooper);
