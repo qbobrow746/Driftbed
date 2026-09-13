@@ -485,6 +485,13 @@
         </select>
         <p class="popover-hint">Sets the root note and scale independently of the biome — pick "Follow biome" on either to go back to its default. The Key dial below still transposes playback on top of this.</p>
       </div>
+      <button class="side-tab" id="midiTab" aria-expanded="false" aria-controls="midiPopover">midi</button>
+      <div class="popover" id="midiPopover" hidden>
+        <div class="popover-title">MIDI input</div>
+        <button class="seg-btn" id="midiToggleBtn" aria-pressed="false">Enable MIDI</button>
+        <p class="popover-hint" id="midiStatus" aria-live="polite">Not connected.</p>
+        <p class="popover-hint">Every key plays in the current scale — middle C is the tonic, and it spans octaves as you play up or down. Sustain pedal and mod wheel work if your controller sends them.</p>
+      </div>
       <button class="side-tab" id="presetsTab" aria-expanded="false" aria-controls="presetsPopover">presets</button>
       <div class="popover" id="presetsPopover" hidden>
         <div class="popover-title">Presets</div>
@@ -823,6 +830,7 @@
     chordSevenths:[true,true,true,true,true],
     stemsOn:false,
     performerOn:false,
+    midiOn:false,
     playing:false
   };
 
@@ -1539,6 +1547,20 @@
         retuneOscBank(handle.voices[idx].bloomOscs, freq*2, 0.15);
       });
     });
+    // MIDI notes are key/scale-relative, not chord-relative (see startMidiNote's doc
+    // comment below) — so recomputing them here too, on every call including a plain
+    // chord advance, is harmless: when only the chord changed, midiNoteToDegree() and
+    // `key` are unchanged, so retuneOscBank() glides to the exact frequency it's
+    // already at. Pitch only actually moves when the key/scale/transpose/biome truly
+    // changed — every one of which already calls this same function.
+    Object.keys(activeMidiNotes).forEach(noteStr=>{
+      const note = Number(noteStr);
+      const v = activeMidiNotes[note];
+      const degree = midiNoteToDegree(note);
+      const freq = noteFreq(key.root, key.scale, degree, MIDI_BASE_OCTAVE) * Math.pow(2, state.transpose/12);
+      retuneOscBank(v.fundamentalOscs, freq, 0.15);
+      retuneOscBank(v.bloomOscs, freq*2, 0.15);
+    });
   }
 
   function startMelodyNote(i){
@@ -1687,6 +1709,159 @@
     v.voices.forEach(voice=>voice.oscs.forEach(o=>{ try{ o.stop(t+3.5); }catch(e){} }));
     if(v.midiNotes) v.midiNotes.forEach(n=>logMidiEvent(n, 'off'));
     delete activeMelodyNotes[i];
+  }
+
+  // ---------- MIDI input: play the instrument from a real keyboard ----------
+  // (The requestMIDIAccess()/device/permission plumbing lives further down, near the
+  // on-screen pad/keyboard wiring — this part is just the note-mapping and voice
+  // lifecycle, kept here because it plays through the exact same voice bank/buses as
+  // startMelodyNote/stopMelodyNote above.)
+  //
+  // Mapping: a MIDI keyboard sends absolute note numbers (0-127) spanning many
+  // octaves, but the five pads are chord-relative scale DEGREES. Rather than wiring
+  // up 5 notes and leaving the rest of the keyboard dead (or chromatic, and so
+  // frequently out of key), every incoming note is folded onto the CURRENT key's
+  // scale: we walk the keyboard's WHITE keys as successive scale degrees — exactly
+  // how a real piano's white keys already walk one scale degree at a time in C
+  // major — and each black key collapses onto the white key just below it (C#->C,
+  // D#->D, F#->F, G#->G, A#->A). That means all 128 possible note numbers resolve to
+  // an in-scale pitch; nothing is ever silent, and nothing ever clashes with the
+  // key. MIDI note 60 (middle C) is pinned to scale degree 0 of currentKey(), so
+  // changing biome/key/scale re-modes and re-transposes the whole keyboard instantly
+  // (see the MIDI branch retuneHeldNotes() adds above). One physical white-key
+  // octave is always one full scale-degree "octave" — noteFreq()'s existing
+  // degree/scale-length wrap does the rest, so a 5-note pentatonic just cycles
+  // faster than a 7-note scale across the same 7 white keys, and a run up the
+  // keyboard is always a run up the current scale, spanning several real octaves.
+  //
+  // NOTE: unlike the pads, MIDI notes are NOT re-based on the live chord's root
+  // (degreeForPad()/chord.deg) — they track currentKey() (tonic + scale) only. A
+  // real player expects a fixed mapping from key to pitch while they play; silently
+  // re-transposing every held note under their fingers each time the backing chord
+  // advances (every ~40-60s) would be disorienting on a real instrument, even though
+  // that's exactly the deliberate slow-drift behavior the pads want.
+  const WHITE_KEY_SLOT = [0,0,1,1,2,3,3,4,4,5,5,6]; // pitch-class 0..11 -> collapsed white-key slot 0..6
+  const MIDI_MIDDLE_C = 60;
+  // Anchor octave for the note-60 = degree-0 mapping below. Deliberately lower than the
+  // octave 4 that startMelodyNote() uses for pads: the pads only ever span degrees 0-7, so
+  // they stay in one register, while a MIDI keyboard spans roughly four octaves either side
+  // of middle C and compounds on top of this. At 2, the mapping lines up with a real piano
+  // when the key is C major — note 60 is 261.63Hz, note 108 is 4186Hz, note 21 is 27.5Hz —
+  // instead of putting middle C above 1.3kHz and the top of an 88-key near 10kHz.
+  const MIDI_BASE_OCTAVE = 2;
+  const MIDI_REF_SLOTS = Math.floor(MIDI_MIDDLE_C/12)*7 + WHITE_KEY_SLOT[MIDI_MIDDLE_C%12]; // anchors note 60 -> degree 0
+  function midiNoteToDegree(note){
+    const octave = Math.floor(note/12);
+    const slot = WHITE_KEY_SLOT[((note%12)+12)%12];
+    return (octave*7 + slot) - MIDI_REF_SLOTS;
+  }
+
+  // activeMidiNotes is keyed by raw MIDI note number (0-127) — deliberately a
+  // SEPARATE map from activeMelodyNotes (keyed by pad index 0-4). MIDI input is
+  // genuinely polyphonic and its key space (0-127) has nothing to do with pad
+  // indices, so keeping the bookkeeping apart means a MIDI note-on/off can never
+  // look up — and therefore never release — a pad's held voices, or vice versa. Both
+  // just add their voices onto the same melodyBus/echoDelay and otherwise don't know
+  // the other exists.
+  const activeMidiNotes = {};
+  let midiSustainOn = false;
+  const midiSustainedOff = new Set(); // notes released while the sustain pedal was held
+  let midiModWheel = 0; // 0..1 from CC1 — see midiVelocityGain()
+
+  // Velocity curve: a soft keypress stays clearly audible (never near-silent) while
+  // a hard hit tops out at exactly the fixed gain the pads/typing-keyboard already
+  // use (0.075) — so MIDI's loudest note matches the existing instrument's level
+  // rather than overpowering it. This is the ONLY path whose per-note gain varies;
+  // startMelodyNote's perNoteGain stays a constant, so pads, the A/S/D/F/G keyboard,
+  // and the generative performer all sound exactly as before.
+  function midiVelocityGain(velocity){
+    const BASE_GAIN = 0.075, MIN_FACTOR = 0.22;
+    const shaped = Math.pow(Math.max(0, Math.min(127, velocity))/127, 0.6);
+    const factor = MIN_FACTOR + (1-MIN_FACTOR)*shaped;
+    const modBoost = 1 + midiModWheel*0.35; // mod wheel: gentle swell on top, up to +35%
+    return BASE_GAIN * factor * modBoost;
+  }
+
+  function startMidiNote(note, velocity){
+    if(velocity<=0){ releaseMidiNote(note); return; } // note-on with velocity 0 means note-off
+    initAudio();
+    if(ctx.state==='suspended') ctx.resume();
+    if(activeMidiNotes[note]) stopMidiNoteVoices(note, 0.04); // fast retrigger, no long tail
+    midiSustainedOff.delete(note);
+
+    const key = currentKey();
+    const degree = midiNoteToDegree(note);
+    const freq = noteFreq(key.root, key.scale, degree, MIDI_BASE_OCTAVE) * Math.pow(2, state.transpose/12);
+    const gainLevel = midiVelocityGain(velocity);
+
+    const t = ctx.currentTime;
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = Math.max(-0.6, Math.min(0.6, (note-MIDI_MIDDLE_C)/48));
+    panner.connect(melodyBus);
+    if(echoDelay) panner.connect(echoDelay);
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(gainLevel, t+0.06); // a real key press: fast attack, not the pads' slow fade-in
+    g.connect(panner);
+    const fundamentalOscs = createVoiceBank(freq, g, t);
+
+    const bloomGain = ctx.createGain();
+    bloomGain.gain.setValueAtTime(0.0001, t);
+    bloomGain.gain.linearRampToValueAtTime(gainLevel*0.4, t+2.2);
+    bloomGain.connect(panner);
+    const bloomOscs = createVoiceBank(freq*2, bloomGain, t);
+
+    const midiNotes = [];
+    logMidiNote(freq, 'on', midiNotes);
+
+    activeMidiNotes[note] = {
+      gain:g, bloom:bloomGain, fundamentalOscs, bloomOscs,
+      oscs: fundamentalOscs.concat(bloomOscs), midiNotes
+    };
+  }
+
+  function stopMidiNoteVoices(note, releaseSecs){
+    const v = activeMidiNotes[note];
+    if(!v) return;
+    const t = ctx.currentTime;
+    const dur = releaseSecs==null ? 1.4 : releaseSecs;
+    [v.gain, v.bloom].forEach(g=>{
+      g.gain.cancelScheduledValues(t);
+      g.gain.setValueAtTime(g.gain.value, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    });
+    v.oscs.forEach(o=>{ try{ o.stop(t+dur+0.05); }catch(e){} });
+    if(v.midiNotes) v.midiNotes.forEach(n=>logMidiEvent(n, 'off'));
+    delete activeMidiNotes[note];
+  }
+  // Note-off (or velocity-0 note-on) arrives here. With the sustain pedal down we
+  // keep the voice sounding and just remember to release it once the pedal lifts;
+  // otherwise it releases immediately, exactly like a pad letting go.
+  function releaseMidiNote(note){
+    if(!activeMidiNotes[note]){ midiSustainedOff.delete(note); return; }
+    if(midiSustainOn){ midiSustainedOff.add(note); return; }
+    stopMidiNoteVoices(note);
+  }
+  function onMidiSustainPedal(value){
+    const down = value>=64;
+    if(midiSustainOn && !down){
+      midiSustainedOff.forEach(n=>stopMidiNoteVoices(n));
+      midiSustainedOff.clear();
+    }
+    midiSustainOn = down;
+  }
+  function onMidiModWheel(value){
+    midiModWheel = Math.max(0, Math.min(127, value))/127;
+  }
+  // Panic: every currently-sounding MIDI note releases immediately, regardless of
+  // the sustain pedal. Used when a device disconnects mid-note, when the user turns
+  // MIDI off while holding notes, or on any other event after which we might never
+  // receive that note's real note-off.
+  function releaseAllMidiNotes(){
+    Object.keys(activeMidiNotes).forEach(n=>stopMidiNoteVoices(Number(n), 0.3));
+    midiSustainedOff.clear();
+    midiSustainOn = false;
   }
 
   // ---------- looper: record a pad performance once, then it repeats hands-free ----------
@@ -2349,6 +2524,10 @@
       : d.chordSevenths.slice();
     out.stemsOn = typeof input.stemsOn==='boolean' ? input.stemsOn : d.stemsOn;
     out.performerOn = typeof input.performerOn==='boolean' ? input.performerOn : d.performerOn;
+    // midiOn is just the user's last on/off preference for the control below — it is
+    // NEVER auto-connected on load (see the "Connect to Web MIDI" wiring further down);
+    // restoring it true only changes the popover's status text, prompting a re-click.
+    out.midiOn = typeof input.midiOn==='boolean' ? input.midiOn : d.midiOn;
     out.playing = false;
     return out;
   }
@@ -2635,6 +2814,7 @@
   wirePopoverTab('chordsTab','chordsPopover');
   wirePopoverTab('blendTab','blendPopover');
   wirePopoverTab('tuningTab','tuningPopover');
+  wirePopoverTab('midiTab','midiPopover');
   wirePopoverTab('presetsTab','presetsPopover');
   document.addEventListener('click', closePopovers);
 
@@ -2727,6 +2907,119 @@
     }
   });
   document.getElementById('loopBtn').addEventListener('click', toggleLooper);
+
+  // ---- Connect to Web MIDI: opt-in only, never requested on load ----
+  // navigator.requestMIDIAccess() shows a browser permission prompt (and Safari
+  // historically doesn't implement it at all), so it must only ever be called from
+  // a direct click on the "midi" popover's button below — never during page load or
+  // state restore, even if a permalink/preset restores midiOn:true (see sanitizeState
+  // above). `midiSupported` only reads whether the API exists — that's a plain
+  // property check, not a call, so it can't itself trigger a prompt.
+  let midiAccess = null;
+  const midiSupported = !!(navigator.requestMIDIAccess);
+  const connectedMidiInputs = new Map(); // port.id -> MIDIInput, for the status line
+
+  function attachMidiInput(input){
+    input.onmidimessage = handleMidiMessage;
+    connectedMidiInputs.set(input.id, input);
+  }
+  function detachMidiInput(input){
+    if(input.onmidimessage) input.onmidimessage = null;
+    connectedMidiInputs.delete(input.id);
+  }
+  function detachAllMidiInputs(){
+    connectedMidiInputs.forEach(detachMidiInput);
+    connectedMidiInputs.clear();
+  }
+  // Re-scans midiAccess.inputs from scratch — used on enable and on any hotplug
+  // (statechange). Detach-then-reattach-what's-still-there is simplest and correct
+  // whether a device appeared, disappeared, or nothing actually changed.
+  function refreshMidiInputs(){
+    detachAllMidiInputs();
+    if(!midiAccess) return;
+    midiAccess.inputs.forEach(input=>{
+      if(input.state==='connected') attachMidiInput(input);
+    });
+  }
+  function updateMidiStatusUI(){
+    const btn = document.getElementById('midiToggleBtn');
+    const status = document.getElementById('midiStatus');
+    if(!btn || !status) return;
+    const connected = !!midiAccess;
+    btn.textContent = connected ? 'Disable MIDI' : 'Enable MIDI';
+    btn.classList.toggle('on', connected);
+    btn.setAttribute('aria-pressed', String(connected));
+    btn.disabled = !midiSupported;
+    if(!midiSupported){
+      status.textContent = 'Not supported in this browser (try Chrome or Edge).';
+    } else if(connected){
+      const names = Array.from(connectedMidiInputs.values()).map(i=>i.name||'MIDI device');
+      status.textContent = names.length ? ('Connected: ' + names.join(', ')) : 'Enabled — no device found yet. Plug one in.';
+    } else if(state.midiOn){
+      status.textContent = 'Was enabled last session — click Enable MIDI to reconnect.';
+    } else {
+      status.textContent = 'Not connected.';
+    }
+  }
+  // Fires when any input/output port connects or disconnects. We don't track which
+  // device a currently-sounding note came from, so on ANY input disconnecting we
+  // panic-release every held MIDI note rather than risk one stuck forever with no
+  // remaining way to ever receive its real note-off.
+  function handleMidiStateChange(e){
+    const port = e.port;
+    if(port && port.type==='input' && port.state==='disconnected') releaseAllMidiNotes();
+    refreshMidiInputs();
+    updateMidiStatusUI();
+  }
+  async function enableMidi(){
+    if(!midiSupported){ updateMidiStatusUI(); return; }
+    try{
+      midiAccess = await navigator.requestMIDIAccess({ sysex:false });
+    }catch(err){
+      midiAccess = null;
+      state.midiOn = false;
+      updateMidiStatusUI();
+      const status = document.getElementById('midiStatus');
+      if(status) status.textContent = 'Permission denied or unavailable.';
+      persist();
+      return;
+    }
+    midiAccess.onstatechange = handleMidiStateChange;
+    refreshMidiInputs();
+    state.midiOn = true;
+    updateMidiStatusUI();
+    persist();
+  }
+  function disableMidi(){
+    releaseAllMidiNotes();
+    midiModWheel = 0;
+    if(midiAccess){
+      midiAccess.onstatechange = null;
+      detachAllMidiInputs();
+      midiAccess = null;
+    }
+    state.midiOn = false;
+    updateMidiStatusUI();
+    persist();
+  }
+  function handleMidiMessage(e){
+    const data = e.data;
+    if(!data || data.length<2) return;
+    const cmd = data[0] & 0xF0; // channel (low nibble) is ignored — respond on all channels
+    if(cmd===0x90){ // note on (velocity 0 is a note-off per the MIDI spec)
+      const vel = data[2]||0;
+      if(vel>0) startMidiNote(data[1], vel); else releaseMidiNote(data[1]);
+    } else if(cmd===0x80){ // note off
+      releaseMidiNote(data[1]);
+    } else if(cmd===0xB0){ // control change
+      if(data[1]===64) onMidiSustainPedal(data[2]||0); // sustain pedal
+      else if(data[1]===1) onMidiModWheel(data[2]||0); // mod wheel
+    }
+  }
+  document.getElementById('midiToggleBtn').addEventListener('click', ()=>{
+    if(midiAccess) disableMidi(); else enableMidi();
+  });
+  updateMidiStatusUI();
 
   // ---- presets popover: factory list, user list (save/load/delete), copy-link ----
   function renderPresetLists(){
@@ -2870,6 +3163,9 @@
     syncChip('chipBreathe','autoBreathe');
     syncChip('chipStems','stemsOn');
     syncChip('chipPerformer','performerOn');
+    // midiOn never auto-connects (see the "Connect to Web MIDI" wiring) — this just
+    // refreshes the popover's status text/button label for the restored preference.
+    updateMidiStatusUI();
 
     document.querySelectorAll('.pad-seventh').forEach(btn=>{
       const idx = Number(btn.dataset.idx);

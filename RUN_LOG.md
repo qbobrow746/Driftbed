@@ -24,8 +24,8 @@ Orchestrator: Opus 5 (plans + verifies + commits). Builders: Sonnet 5 agents, on
 | 2 | Presets + shareable permalink (URL hash, localStorage, factory patches) | done, browser-verified | `98ba708` |
 | 3 | Scale + root decoupled from biome | done, browser-verified | `cd44675` |
 | 4 | Audio-reactive visuals (AnalyserNode) | done, browser-verified | `28c4692` |
-| 5 | Generative auto-melodist | dispatched | — |
-| 6 | Web MIDI input | queued | — |
+| 5 | Generative auto-melodist | done, browser-verified | `2cd3c55` |
+| 6 | Web MIDI input | dispatched | — |
 | 7 | Freeze + tape character | queued | — |
 | 8 | Three new biomes (rain/marsh, ocean/tide, void/nebula) | queued | — |
 | 9 | Seamless loop export for game use | queued | — |
@@ -33,6 +33,14 @@ Orchestrator: Opus 5 (plans + verifies + commits). Builders: Sonnet 5 agents, on
 
 Stretch if time remains: granular texture layer, pad-ducks-under-melody sidechain, stereo
 width control, "song mode" arc across biomes.
+
+## Deferred to the polish unit (10)
+
+- The generative performer (unit 5) plays pads without lighting them up: the `.active` class is
+  only added by the pointer/keyboard handlers, so you can't see what it's playing. Same will apply
+  to MIDI-input notes. Worth showing pad activity regardless of what triggered the note.
+- Permalinks are ~1330 chars because the payload is plain JSON base64'd and includes chord edits
+  for all five biomes. Works fine, but could be much shorter if it ever matters.
 
 ## Notes / findings
 
