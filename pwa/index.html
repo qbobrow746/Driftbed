@@ -522,6 +522,11 @@
         <button class="seg-btn" id="midiToggleBtn" aria-pressed="false">Enable MIDI</button>
         <p class="popover-hint" id="midiStatus" aria-live="polite">Not connected.</p>
         <p class="popover-hint" id="midiActivity"></p>
+        <div class="fader-top">
+          <span class="fader-label">Keyboard level</span>
+          <span class="fader-value" id="midiLevelValue">100%</span>
+        </div>
+        <input type="range" class="range" id="midiLevel" min="0" max="200" value="100" aria-label="MIDI keyboard level" />
         <p class="popover-hint">Every key plays in the current scale — middle C is the tonic, and it spans octaves as you play up or down. Sustain pedal and mod wheel work if your controller sends them.</p>
       </div>
       <button class="side-tab" id="presetsTab" aria-expanded="false" aria-controls="presetsPopover">presets</button>
@@ -900,7 +905,7 @@
     chordSevenths:[true,true,true,true,true],
     stemsOn:false,
     performerOn:false,
-    midiOn:false,
+    midiOn:false, midiLevel:100,
     freezeOn:false,
     tapeOn:false,
     loopLenSecs:'30',
@@ -2176,7 +2181,7 @@
     const shaped = Math.pow(Math.max(0, Math.min(127, velocity))/127, 0.6);
     const factor = MIN_FACTOR + (1-MIN_FACTOR)*shaped;
     const modBoost = 1 + midiModWheel*0.35; // mod wheel: gentle swell on top, up to +35%
-    return BASE_GAIN * factor * modBoost;
+    return BASE_GAIN * factor * modBoost * (state.midiLevel/100);
   }
 
   function startMidiNote(note, velocity){
@@ -3129,6 +3134,10 @@
     // rejected rather than trusted, same as biome/blendBiome above.
     out.keyScale = (typeof input.keyScale==='string' && (input.keyScale==='' || SCALE_DEFS[input.keyScale]))
       ? input.keyScale : d.keyScale;
+    // midiLevel is a percentage of the normal MIDI note gain — 100 is unity, and it goes to
+    // 200 so a quiet controller can be pushed without touching Presence (which is the master
+    // and would bring the whole bed up with it).
+    out.midiLevel = Math.round(clampNum(input.midiLevel, 0, 200, d.midiLevel));
     out.accentsOn = typeof input.accentsOn==='boolean' ? input.accentsOn : d.accentsOn;
     out.windOn = typeof input.windOn==='boolean' ? input.windOn : d.windOn;
     out.echoOn = typeof input.echoOn==='boolean' ? input.echoOn : d.echoOn;
@@ -3501,6 +3510,8 @@
 
   const blendBiomeSelect = document.getElementById('blendBiomeSelect');
   const blendAmountInput = document.getElementById('blendAmount');
+  const midiLevelInput = document.getElementById('midiLevel');
+  const midiLevelValue = document.getElementById('midiLevelValue');
   blendBiomeSelect.addEventListener('change', (e)=>{
     e.stopPropagation();
     stopBlend();
@@ -3511,6 +3522,14 @@
   blendAmountInput.addEventListener('input', (e)=>{
     state.blendAmount = Number(e.target.value);
     if(ctx) applyBlendAmount(state.blendAmount);
+    persist();
+  });
+
+  // Read at note-start by midiVelocityGain(), so it takes effect on the next key rather than
+  // retroactively re-levelling notes that are already sounding.
+  midiLevelInput.addEventListener('input', (e)=>{
+    state.midiLevel = Number(e.target.value);
+    midiLevelValue.textContent = state.midiLevel + '%';
     persist();
   });
 
@@ -3833,6 +3852,8 @@
 
     blendBiomeSelect.value = state.blendBiome;
     blendAmountInput.value = state.blendAmount;
+    midiLevelInput.value = state.midiLevel;
+    midiLevelValue.textContent = state.midiLevel + '%';
     autofadeSelect.value = state.autofade;
     keyRootSelect.value = state.keyRoot===''? '' : String(state.keyRoot);
     keyScaleSelect.value = state.keyScale;
