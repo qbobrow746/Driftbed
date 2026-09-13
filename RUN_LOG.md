@@ -27,8 +27,8 @@ Orchestrator: Opus 5 (plans + verifies + commits). Builders: Sonnet 5 agents, on
 | 5 | Generative auto-melodist | done, browser-verified | `2cd3c55` |
 | 6 | Web MIDI input | done, browser-verified | `20ca3c5` |
 | 7 | Freeze + tape character | done, browser-verified | `65a6f5a` |
-| 8 | Three new biomes (rain/marsh, ocean/tide, void/nebula) | dispatched | — |
-| 9 | Seamless loop export for game use | queued | — |
+| 8 | Three new biomes (rain/marsh, ocean/tide, void/nebula) | done, browser-verified | `90211fe` |
+| 9 | Seamless loop export for game use | dispatched | — |
 | 10 | Mobile + a11y polish pass + README | queued | — |
 
 Stretch if time remains: granular texture layer, pad-ducks-under-melody sidechain, stereo

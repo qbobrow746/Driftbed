@@ -121,6 +121,7 @@
   .totem:hover{ color:var(--ink); }
   .totem.active{ color:var(--accent); border-color:color-mix(in srgb, var(--accent) 55%, transparent); background:color-mix(in srgb, var(--accent) 12%, transparent); }
   .totem:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
+  .totem:disabled{ opacity:.4; cursor:default; }
 
   /* core: breathe button + presence fader */
   .core{ display:flex; align-items:center; gap:1.3rem; }
@@ -322,6 +323,13 @@
   }
   .autofade select:focus-visible{ outline:2px solid var(--focus); }
   .autofade .countdown{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:.68rem; color:var(--accent); min-width:2.6em; }
+
+  #loopLen{
+    background:transparent; color:var(--ink-dim); border:none; border-bottom:1px solid var(--panel-border);
+    font-family:'Manrope'; font-size:.7rem; padding:.15rem .1rem; cursor:pointer; align-self:center;
+  }
+  #loopLen:focus-visible{ outline:2px solid var(--focus); }
+  #loopLen:disabled{ opacity:.45; cursor:default; }
 
   /* secondary dials */
   .dials{ display:grid; grid-template-columns:repeat(2,1fr); gap:1.3rem 1.6rem; }
@@ -625,6 +633,16 @@
           <span id="recordLabel">record</span>
         </button>
         <button class="chip" id="chipStems" aria-pressed="false" title="Also export separate bed &amp; melody stems (roughly 3x the memory and file size)">stems</button>
+        <select id="loopLen" aria-label="Seamless loop length" title="Length of the seamless loop to capture">
+          <option value="15">15s loop</option>
+          <option value="30" selected>30s loop</option>
+          <option value="60">60s loop</option>
+          <option value="120">120s loop</option>
+        </select>
+        <button id="loopCaptureBtn" aria-label="Capture a seamless loop export" title="Capture a fixed-length WAV that repeats with no seam — crossfades the tail back over the head. Freezes the current chord for the capture, since a chord change mid-loop can't be hidden. (Not the same as the 'loop' button above, which replays a played performance.)">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 10a6 6 0 1 1 2.3 4.7"/><path d="M4 15.2v-3.5h3.5"/></svg>
+          <span id="loopCaptureLabel">loop export</span>
+        </button>
         <span class="rec-status" id="recStatus" aria-live="polite"></span>
       </div>
       <div class="autofade">
@@ -844,6 +862,11 @@
   function lerp(a,b,t){ return a+(b-a)*t; }
   function lerpColor(a,b,t){ return { r:lerp(a.r,b.r,t), g:lerp(a.g,b.g,t), b:lerp(a.b,b.b,t) }; }
 
+  // Declared here (rather than down in the loop-capture section) because sanitizeState()
+  // reads it and restoreInitialState() below can call sanitizeState() immediately at
+  // startup — a `const` declared later would still be in its temporal dead zone then.
+  const LOOP_LEN_OPTIONS = ['15','30','60','120'];
+
   const state = {
     biome:'desert', presence:35, density:30, air:45, warmth:40,
     intensity:50, transpose:0, autofade:'0',
@@ -860,6 +883,7 @@
     midiOn:false,
     freezeOn:false,
     tapeOn:false,
+    loopLenSecs:'30',
     playing:false
   };
 
@@ -917,6 +941,23 @@
   let recordState='idle'; // 'idle' | 'recording' | 'saving' — drives the record button/status UI
   let recordTimerInterval=null, recordAutoStopTimeout=null;
   const REC_WARN_MS = 10*60*1000, REC_LIMIT_MS = 15*60*1000;
+  // ---------- loop capture: a fixed-length, seam-hidden WAV export ----------
+  // Shares recordState/isRecording/the chunk arrays/recordTimerInterval/recordAutoStopTimeout
+  // with ordinary recording above — only one of the two can ever be in flight, and
+  // loopCaptureActive just tags which flavor owns the current 'recording'/'saving' state so
+  // toggleRecord()/toggleLoopCapture() know when to defer to each other.
+  // (LOOP_LEN_OPTIONS itself lives up near `state`, since sanitizeState() needs it and
+  // restoreInitialState() runs — and can call sanitizeState() — immediately below.)
+  // Extra tail recorded past the requested loop length, then crossfaded back over the head
+  // (see buildLoopBuffer). The chord is frozen for the whole capture (see startLoopCapture),
+  // so there's no large harmonic jump to hide — what's left to mask is short-timescale stuff
+  // (echo taps up to ~0.7s, noise gusts, stereo decorrelation) plus reverb tails up to ~9.5s
+  // (Void) that never fully decay to silence since the pad drone sustains throughout. 3s is
+  // comfortably past the "a second or more" floor for that, while staying a modest fraction
+  // of even the shortest (15s) loop option.
+  const LOOP_OVERLAP_SEC = 3;
+  let loopCaptureActive = false; // true while the in-flight recording is a loop capture, not an ordinary one
+  let loopCaptureFreezeWasOn = false; // freezeOn before capture started, restored once it ends/cancels
   let noiseSource, noiseFilter, noiseGustGain, gustDepth, noiseLevelGain, noisePanner, gustLfo, noisePanLfo;
   let echoDelay, echoFeedback, echoWet;
   let blendGain, blendChordIndex = 0, blendChordTimer = null, blendActiveVoices = [];
@@ -2578,6 +2619,69 @@
     const blob = await encodeWav(left, right, ctx.sampleRate);
     downloadBlob(blob, `driftbed-${state.biome}-${ts}-${name}.wav`, delayMs);
   }
+  function clampInt16(v){
+    return Math.max(-32768, Math.min(32767, Math.round(v)));
+  }
+  // Re-cuts a captured (loopSecs + overlapSecs) take down to exactly loopSecs, so the file
+  // can be looped by a game engine with no audible seam. Standard loop-splice technique:
+  //   - output[overlapLen, loopLen) = source[overlapLen, loopLen)              — untouched
+  //   - output[0, overlapLen)       = equal-power blend of source[0, overlapLen) (the head,
+  //                                   fading IN) with source[loopLen, loopLen+overlapLen)
+  //                                   (the extra tail recorded past the loop point, fading
+  //                                   OUT) — i.e. what would have played next if the take
+  //                                   had kept running gets folded into the very start, so
+  //                                   the last sample of the file flows into the first the
+  //                                   same way it flowed in the original continuous take.
+  // Equal-power (sin/cos) rather than linear, because the two halves of the overlap are
+  // decorrelated ambient material — a linear fade would dip in perceived loudness through
+  // the middle even though sin^2+cos^2==1 keeps total power constant throughout.
+  async function buildLoopBuffer(left, right, sampleRate, loopSecs, overlapSecs){
+    const loopLen = Math.round(loopSecs * sampleRate);
+    const maxOverlap = Math.floor(loopLen/2);
+    let overlapLen = Math.min(Math.round(overlapSecs * sampleRate), maxOverlap);
+    let needed = loopLen + overlapLen;
+    if(left.length < needed){
+      // Timer/scheduling jitter came up short of the requested overlap — shrink the overlap
+      // to whatever tail was actually captured rather than throwing away the take.
+      overlapLen = Math.max(0, Math.min(overlapLen, left.length - loopLen));
+      needed = loopLen + overlapLen;
+    }
+    const outLeft = new Int16Array(loopLen);
+    const outRight = new Int16Array(loopLen);
+    if(left.length < needed || overlapLen<=0){
+      // Not even enough for a plain loopLen-sample take (a very early cancel raced the
+      // auto-stop) — just hand back what exists, zero-padded, rather than crash.
+      outLeft.set(left.subarray(0, Math.min(left.length, loopLen)));
+      outRight.set(right.subarray(0, Math.min(right.length, loopLen)));
+      return { left: outLeft, right: outRight };
+    }
+    // untouched middle-to-end
+    outLeft.set(left.subarray(overlapLen, loopLen), overlapLen);
+    outRight.set(right.subarray(overlapLen, loopLen), overlapLen);
+    // crossfaded head
+    const CHUNK = 200000;
+    for(let start=0; start<overlapLen; start+=CHUNK){
+      const end = Math.min(overlapLen, start+CHUNK);
+      for(let i=start;i<end;i++){
+        const t = overlapLen<=1 ? 1 : i/(overlapLen-1); // 0 at first sample -> 1 at last sample of the overlap
+        const fadeIn = Math.sin(t * Math.PI/2);  // head: 0 -> 1
+        const fadeOut = Math.cos(t * Math.PI/2); // tail: 1 -> 0
+        outLeft[i] = clampInt16(left[i]*fadeIn + left[loopLen+i]*fadeOut);
+        outRight[i] = clampInt16(right[i]*fadeIn + right[loopLen+i]*fadeOut);
+      }
+      if(end<overlapLen) await new Promise(r=>setTimeout(r,0));
+    }
+    return { left: outLeft, right: outRight };
+  }
+  async function exportLoopStem(leftChunks, rightChunks, name, ts, delayMs, loopSecs){
+    const totalLen = leftChunks.reduce((n,c)=>n+c.length, 0);
+    if(totalLen===0) return;
+    const left = await flattenChunks(leftChunks, totalLen);
+    const right = await flattenChunks(rightChunks, totalLen);
+    const looped = await buildLoopBuffer(left, right, ctx.sampleRate, loopSecs, LOOP_OVERLAP_SEC);
+    const blob = await encodeWav(looped.left, looped.right, ctx.sampleRate);
+    downloadBlob(blob, `driftbed-${state.biome}-${ts}-${name}.wav`, delayMs);
+  }
   function estimateRecordingBytes(){
     const sum = arr => arr.reduce((n,c)=>n + c.length*2, 0); // Int16 = 2 bytes/sample
     let bytes = sum(leftChunks) + sum(rightChunks);
@@ -2594,8 +2698,16 @@
     if(!el) return;
     if(recordState!=='recording'){ return; }
     const elapsedMs = performance.now() - recordStartMs;
-    const m = Math.floor(elapsedMs/60000), s = Math.floor((elapsedMs%60000)/1000);
     const stemsNote = state.stemsOn ? ' (3 stems)' : '';
+    if(loopCaptureActive){
+      const loopSecs = Number(state.loopLenSecs);
+      const totalSecs = loopSecs + LOOP_OVERLAP_SEC;
+      const elapsedSecs = Math.min(totalSecs, Math.floor(elapsedMs/1000));
+      el.textContent = `capturing ${loopSecs}s loop… ${elapsedSecs}/${totalSecs}s · ~${formatBytes(estimateRecordingBytes())}${stemsNote}`;
+      el.classList.remove('warn');
+      return;
+    }
+    const m = Math.floor(elapsedMs/60000), s = Math.floor((elapsedMs%60000)/1000);
     el.textContent = `${m}:${String(s).padStart(2,'0')} · ~${formatBytes(estimateRecordingBytes())}${stemsNote}`;
     el.classList.toggle('warn', elapsedMs >= REC_WARN_MS);
   }
@@ -2646,12 +2758,17 @@
   async function toggleRecord(){
     // State machine: idle -> recording -> saving -> idle. The button is disabled for the
     // whole "saving" phase, so a second recording can never start while one is being saved.
-    if(recordState==='saving') return;
+    // loopCaptureActive means the current recording/saving cycle belongs to the loop-capture
+    // button instead (see startLoopCapture/finishLoopCapture below) — loopCaptureBtn disables
+    // this button for that whole span, but this guard is a cheap belt-and-suspenders check.
+    if(recordState==='saving' || loopCaptureActive) return;
     initAudio();
     const btn = document.getElementById('recordBtn');
     const label = document.getElementById('recordLabel');
     const stemsChip = document.getElementById('chipStems');
     const statusEl = document.getElementById('recStatus');
+    const loopBtn = document.getElementById('loopCaptureBtn');
+    const loopLenSel = document.getElementById('loopLen');
 
     if(recordState==='idle'){
       leftChunks = []; rightChunks = [];
@@ -2665,6 +2782,10 @@
       btn.classList.add('recording');
       label.textContent = 'stop & save';
       if(stemsChip) stemsChip.disabled = true;
+      // An ordinary recording and a loop capture share the same underlying tap/chunk
+      // pipeline and recordState, so only one can run at a time.
+      if(loopBtn) loopBtn.disabled = true;
+      if(loopLenSel) loopLenSel.disabled = true;
       updateRecordStatus();
       recordTimerInterval = setInterval(updateRecordStatus, 1000);
       recordAutoStopTimeout = setTimeout(()=>{
@@ -2704,8 +2825,128 @@
 
     btn.disabled = false;
     if(stemsChip) stemsChip.disabled = false;
+    if(loopBtn) loopBtn.disabled = false;
+    if(loopLenSel) loopLenSel.disabled = false;
     label.textContent = 'record';
     if(statusEl) statusEl.textContent = '';
+    recordState = 'idle';
+  }
+
+  // ---------- loop capture wiring: start / cancel / finish ----------
+  // Reuses ordinary recording's taps, chunk arrays, flattenChunks/encodeWav/downloadBlob and
+  // recordState machine wholesale — the only new pipeline step is buildLoopBuffer's re-cut
+  // (see exportLoopStem above), and the extra lock-down of the controls that would otherwise
+  // let the harmony change mid-capture.
+  function setLoopCaptureLocks(locked){
+    const recordBtn = document.getElementById('recordBtn');
+    const stemsChip = document.getElementById('chipStems');
+    const freezeChip = document.getElementById('chipFreeze');
+    const nextChordBtn = document.getElementById('nextChord');
+    const blendSelect = document.getElementById('blendBiomeSelect');
+    if(recordBtn) recordBtn.disabled = locked;
+    if(stemsChip) stemsChip.disabled = locked;
+    if(freezeChip) freezeChip.disabled = locked;
+    if(nextChordBtn) nextChordBtn.disabled = locked;
+    if(blendSelect) blendSelect.disabled = locked;
+    // Biome totems: a mid-capture biome switch would swap the reverb/scale/chords outright,
+    // which is even more disruptive than an un-frozen chord change.
+    document.querySelectorAll('.totem').forEach(b=>{ b.disabled = locked; });
+  }
+  function resetLoopCaptureUI(){
+    const btn = document.getElementById('loopCaptureBtn');
+    const label = document.getElementById('loopCaptureLabel');
+    const lenSelect = document.getElementById('loopLen');
+    const statusEl = document.getElementById('recStatus');
+    if(btn){ btn.classList.remove('recording'); btn.disabled = false; }
+    if(label) label.textContent = 'loop export';
+    if(lenSelect) lenSelect.disabled = false;
+    if(statusEl) statusEl.textContent = '';
+    setLoopCaptureLocks(false);
+  }
+  function startLoopCapture(){
+    if(recordState!=='idle') return; // an ordinary recording or another loop capture already owns it
+    initAudio();
+    const btn = document.getElementById('loopCaptureBtn');
+    const label = document.getElementById('loopCaptureLabel');
+    const lenSelect = document.getElementById('loopLen');
+
+    // A chord change mid-capture leaves the head and tail in different harmonies, which no
+    // crossfade can hide — so loop capture always pins the current chord for its duration.
+    // Whatever freeze state the user had is restored when the capture ends or is cancelled.
+    loopCaptureFreezeWasOn = state.freezeOn;
+    if(!state.freezeOn) setFreeze(true);
+
+    leftChunks = []; rightChunks = [];
+    bedLeftChunks = []; bedRightChunks = [];
+    melodyLeftChunks = []; melodyRightChunks = [];
+    midiEvents = [];
+    recordStartMs = performance.now();
+    isRecording = true;
+    recordState = 'recording';
+    loopCaptureActive = true;
+    startRecorderTaps();
+
+    btn.classList.add('recording');
+    label.textContent = 'cancel';
+    if(lenSelect) lenSelect.disabled = true;
+    setLoopCaptureLocks(true);
+
+    updateRecordStatus();
+    recordTimerInterval = setInterval(updateRecordStatus, 1000);
+    const loopSecs = Number(state.loopLenSecs);
+    const captureMs = (loopSecs + LOOP_OVERLAP_SEC) * 1000;
+    recordAutoStopTimeout = setTimeout(()=>{
+      if(recordState==='recording' && loopCaptureActive) finishLoopCapture();
+    }, captureMs);
+  }
+  function cancelLoopCapture(){
+    // Discards the in-progress take entirely — no partial/short loop is exported. Tears
+    // down the taps and returns everything (including freeze) to how it was before capture
+    // started, same as a natural finish, just with no file written.
+    isRecording = false;
+    stopRecorderTaps();
+    if(recordTimerInterval){ clearInterval(recordTimerInterval); recordTimerInterval = null; }
+    if(recordAutoStopTimeout){ clearTimeout(recordAutoStopTimeout); recordAutoStopTimeout = null; }
+    leftChunks = []; rightChunks = [];
+    bedLeftChunks = []; bedRightChunks = [];
+    melodyLeftChunks = []; melodyRightChunks = [];
+    midiEvents = [];
+    loopCaptureActive = false;
+    if(!loopCaptureFreezeWasOn) setFreeze(false);
+    resetLoopCaptureUI();
+    recordState = 'idle';
+  }
+  async function finishLoopCapture(){
+    isRecording = false;
+    recordState = 'saving';
+    stopRecorderTaps();
+    if(recordTimerInterval){ clearInterval(recordTimerInterval); recordTimerInterval = null; }
+    if(recordAutoStopTimeout){ clearTimeout(recordAutoStopTimeout); recordAutoStopTimeout = null; }
+    const btn = document.getElementById('loopCaptureBtn');
+    const label = document.getElementById('loopCaptureLabel');
+    const statusEl = document.getElementById('recStatus');
+    if(btn){ btn.classList.remove('recording'); btn.disabled = true; }
+    if(label) label.textContent = 'saving…';
+    if(statusEl){ statusEl.textContent = 'saving…'; statusEl.classList.remove('warn'); }
+
+    const ts = Date.now();
+    const loopSecs = Number(state.loopLenSecs);
+    await exportLoopStem(leftChunks, rightChunks, `loop${loopSecs}s`, ts, 0, loopSecs);
+    leftChunks = []; rightChunks = [];
+    if(state.stemsOn){
+      await exportLoopStem(bedLeftChunks, bedRightChunks, `loop${loopSecs}s-bed`, ts, 150, loopSecs);
+      bedLeftChunks = []; bedRightChunks = [];
+      await exportLoopStem(melodyLeftChunks, melodyRightChunks, `loop${loopSecs}s-melody`, ts, 150, loopSecs);
+      melodyLeftChunks = []; melodyRightChunks = [];
+    }
+    // No .mid export here: buildLoopBuffer re-cuts and re-times the audio (crossfaded head,
+    // dropped overlap), so the absolute note timestamps in midiEvents no longer line up with
+    // anything in the exported file.
+    midiEvents = [];
+
+    loopCaptureActive = false;
+    if(!loopCaptureFreezeWasOn) setFreeze(false);
+    resetLoopCaptureUI();
     recordState = 'idle';
   }
 
@@ -2781,6 +3022,7 @@
     out.midiOn = typeof input.midiOn==='boolean' ? input.midiOn : d.midiOn;
     out.freezeOn = typeof input.freezeOn==='boolean' ? input.freezeOn : d.freezeOn;
     out.tapeOn = typeof input.tapeOn==='boolean' ? input.tapeOn : d.tapeOn;
+    out.loopLenSecs = LOOP_LEN_OPTIONS.includes(String(input.loopLenSecs)) ? String(input.loopLenSecs) : d.loopLenSecs;
     out.playing = false;
     return out;
   }
@@ -2969,6 +3211,17 @@
   });
   document.getElementById('nextChord').addEventListener('click', advanceChord);
   document.getElementById('recordBtn').addEventListener('click', toggleRecord);
+
+  const loopLenSelect = document.getElementById('loopLen');
+  loopLenSelect.addEventListener('change', ()=>{
+    state.loopLenSecs = loopLenSelect.value;
+    persist();
+  });
+  document.getElementById('loopCaptureBtn').addEventListener('click', ()=>{
+    if(recordState==='saving') return;
+    if(recordState==='idle') startLoopCapture();
+    else if(loopCaptureActive) cancelLoopCapture();
+  });
 
   const autofadeSelect = document.getElementById('autofade');
   autofadeSelect.addEventListener('change', ()=>{
@@ -3440,6 +3693,7 @@
     autofadeSelect.value = state.autofade;
     keyRootSelect.value = state.keyRoot===''? '' : String(state.keyRoot);
     keyScaleSelect.value = state.keyScale;
+    loopLenSelect.value = state.loopLenSecs;
 
     // rebuilds #chordSlots from the (possibly just-restored) BIOMES chord edits, and
     // relabels the melody pads/chord readout to match
