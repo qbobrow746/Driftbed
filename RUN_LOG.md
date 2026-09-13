@@ -22,8 +22,8 @@ Orchestrator: Opus 5 (plans + verifies + commits). Builders: Sonnet 5 agents, on
 | P2 | tools/build-standalone.mjs, tools/check.mjs, AGENT_NOTES.md | done, adversarially verified | `b724a81` |
 | 1 | Recorder hardening (on-demand taps, non-blocking encode, length cap) | done, browser-verified | `6ae4add` |
 | 2 | Presets + shareable permalink (URL hash, localStorage, factory patches) | done, browser-verified | `98ba708` |
-| 3 | Scale + root decoupled from biome | dispatched | — |
-| 4 | Audio-reactive visuals (AnalyserNode) | queued | — |
+| 3 | Scale + root decoupled from biome | done, browser-verified | `cd44675` |
+| 4 | Audio-reactive visuals (AnalyserNode) | dispatched | — |
 | 5 | Generative auto-melodist | queued | — |
 | 6 | Web MIDI input | queued | — |
 | 7 | Freeze + tape character | queued | — |
