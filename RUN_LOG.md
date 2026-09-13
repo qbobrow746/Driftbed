@@ -25,8 +25,8 @@ visual weight.
 
 | # | Unit | State | Commit |
 |---|------|-------|--------|
-| 1 | Responsive two-column layout on wide viewports | dispatched | — |
-| 2 | Visual hierarchy + craft pass (type, spacing, states, transitions) | queued | — |
+| 1 | Responsive two-column layout on wide viewports | done, browser-verified | `39f18ab` |
+| 2 | Visual hierarchy + craft pass (type, spacing, states, transitions) | dispatched | — |
 | 3 | First-run guidance + honest labels (Presence = volume) | queued | — |
 | 4 | The canvas field: depth, per-biome signature, grading | queued | — |
 | 5 | Stretch: now-playing state + micro-interactions | queued | — |
@@ -40,6 +40,12 @@ visual weight.
   `requestAnimationFrame` is throttled while it's hidden.
 - Real labelling failure confirmed by the user this session: Presence is the master volume and
   nothing said so, which is why the instrument seemed silent and then too quiet.
+- Unit 1 result: panel 560x1082 (scrolling) → 1024x643 (no scroll) at 1280x900; columns 410/575.
+  Phones unchanged via `display:contents` on the new `.panel-col` wrappers.
+- Discovered in unit 1 and handed to unit 2: `.panel` has `backdrop-filter`, which makes it the
+  containing block for `position:fixed` descendants — so the popovers' "fixed bottom sheet" is
+  positioned against the panel, not the viewport. Measured 7px below the viewport at 1000x700.
+  The fix is a max-height plus internal scroll, not fighting the containing block.
 
 ---
 

@@ -16,6 +16,10 @@
     --panel-border:rgba(255,255,255,.08);
     --ink:#eee9df;
     --ink-dim:#8d939b;
+    /* --ink-3: the tertiary tone — one step quieter than --ink-dim. Used for controls
+       that are set once and forgotten (dials, chips, side-tabs, popovers) so they
+       genuinely recede instead of reading at the same weight as what you perform with. */
+    --ink-3:#767b83;
     --track:rgba(255,255,255,.10);
     --focus:#f2f0e8;
     --accent:#e08a4f;
@@ -29,6 +33,24 @@
     --sp-4:1rem;
     --sp-5:1.5rem;
     --sp-6:2.25rem;
+
+    /* type scale — three loaded families (Fraunces display, Manrope UI, IBM Plex Mono
+       numerals) step through these nine sizes with intent, tied to the control tiers:
+         --fs-1 / --fs-2   tertiary micro-copy   (10 / 11px) — dials, chips, side-tabs, hints
+         --fs-3 / --fs-4   secondary UI text     (12 / 13px) — totems, Intensity, quick actions
+         --fs-5 / --fs-6   primary UI text       (14 / 16px) — Presence label/value
+         --fs-7            primary display accent(17px)      — melody pad note names
+         --fs-8 / --fs-9   brand wordmark        (21 / 26px)
+       Every family keeps its own weight/letter-spacing rules; only the size steps are shared. */
+    --fs-1:.625rem;
+    --fs-2:.6875rem;
+    --fs-3:.75rem;
+    --fs-4:.8125rem;
+    --fs-5:.875rem;
+    --fs-6:1rem;
+    --fs-7:1.0625rem;
+    --fs-8:1.3125rem;
+    --fs-9:1.625rem;
   }
 
   *{ box-sizing:border-box; }
@@ -52,7 +74,7 @@
 
   .mark{
     position:fixed; top:max(2rem, env(safe-area-inset-top) + .6rem); left:max(2rem, env(safe-area-inset-left) + .6rem); z-index:2;
-    display:flex; flex-direction:column; gap:.2rem;
+    display:flex; flex-direction:column; gap:var(--sp-1);
     user-select:none;
   }
   .mark-name{
@@ -60,21 +82,21 @@
     font-style:italic;
     font-optical-sizing:auto;
     font-weight:500;
-    font-size:1.5rem;
+    font-size:var(--fs-9);
     color:var(--ink);
     opacity:.92;
   }
   .mark-sub{
-    font-size:.68rem;
+    font-size:var(--fs-2);
     letter-spacing:.11em;
     text-transform:uppercase;
-    color:var(--ink-dim);
+    color:var(--ink-3);
   }
 
   .chord-mark{
     position:fixed; bottom:max(2rem, env(safe-area-inset-bottom) + .6rem); left:max(2rem, env(safe-area-inset-left) + .6rem); z-index:2;
     font-family:'IBM Plex Mono', ui-monospace, monospace;
-    font-size:.85rem; color:var(--ink-dim);
+    font-size:var(--fs-5); color:var(--ink-dim);
     letter-spacing:.02em;
     min-height:1.2em;
   }
@@ -122,9 +144,10 @@
     }
   }
 
-  /* biome totems */
-  .totems-row{ position:relative; display:flex; align-items:center; justify-content:center; gap:.6rem; flex-wrap:wrap; }
-  .totems{ display:flex; gap:.6rem; align-self:center; flex-wrap:wrap; justify-content:center; }
+  /* biome totems — secondary tier: reached for often, styled a clear step below the
+     play button/Presence/pads but with more presence than the set-and-forget controls. */
+  .totems-row{ position:relative; display:flex; align-items:center; justify-content:center; gap:var(--sp-2); flex-wrap:wrap; }
+  .totems{ display:flex; gap:var(--sp-2); align-self:center; flex-wrap:wrap; justify-content:center; }
   .totem{
     width:2.4rem; height:2.4rem; border-radius:999px;
     border:1px solid var(--panel-border);
@@ -133,28 +156,34 @@
     color:var(--ink-dim);
     cursor:pointer;
     position:relative;
-    transition:color .4s ease, border-color .4s ease, background .4s ease;
+    transition:color .2s ease, border-color .2s ease, background .2s ease;
   }
   .totem svg{ width:1.1rem; height:1.1rem; stroke:currentColor; fill:none; }
   .totem:hover{ color:var(--ink); }
+  .totem:active{ filter:brightness(.9); }
   .totem.active{ color:var(--accent); border-color:color-mix(in srgb, var(--accent) 55%, transparent); background:color-mix(in srgb, var(--accent) 12%, transparent); }
   .totem:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
-  .totem:disabled{ opacity:.4; cursor:default; }
+  .totem:disabled{ opacity:.45; cursor:default; }
 
-  /* core: breathe button + presence fader */
-  .core{ display:flex; align-items:center; gap:1.3rem; }
+  /* core: breathe button + presence fader — primary tier. This is what you actually
+     perform with, so it gets the biggest control, the highest-contrast surface, and a
+     permanent (not just on-hover) hint of the live accent colour. */
+  .core{ display:flex; align-items:center; gap:var(--sp-5); }
 
   .breathe{
     flex:0 0 auto;
-    width:4rem; height:4rem; border-radius:999px;
-    border:1px solid var(--panel-border);
-    background:rgba(255,255,255,.03);
+    width:4.5rem; height:4.5rem; border-radius:999px;
+    border:1px solid color-mix(in srgb, var(--accent) 32%, var(--panel-border));
+    background:color-mix(in srgb, var(--accent) 9%, rgba(255,255,255,.04));
     color:var(--ink);
     display:flex; align-items:center; justify-content:center;
     cursor:pointer;
     position:relative;
+    transition:border-color .2s ease, background .2s ease;
   }
-  .breathe svg{ width:1.3rem; height:1.3rem; }
+  .breathe:hover{ border-color:color-mix(in srgb, var(--accent) 48%, var(--panel-border)); }
+  .breathe:active{ filter:brightness(.94); }
+  .breathe svg{ width:1.4rem; height:1.4rem; }
   .breathe::before{
     content:"";
     position:absolute; inset:-6px; border-radius:999px;
@@ -183,8 +212,13 @@
 
   .fader-block{ flex:1 1 auto; display:flex; flex-direction:column; gap:var(--sp-2); }
   .fader-top{ display:flex; justify-content:space-between; align-items:baseline; }
-  .fader-label{ font-size:.7rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-dim); }
-  .fader-value{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:.72rem; color:var(--ink-dim); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  /* Presence's label/value (inside .core) get the primary treatment: full-brightness
+     ink, a full step up the type scale, and more weight. Every other fader-label/value
+     (Intensity, Melody's header) stays at the secondary size defined further down. */
+  .core .fader-label{ font-size:var(--fs-6); font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--ink); }
+  .core .fader-value{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:var(--fs-5); color:var(--ink); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .fader-label{ font-size:var(--fs-4); font-weight:500; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-dim); }
+  .fader-value{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:var(--fs-3); color:var(--ink-dim); font-variant-numeric:tabular-nums; white-space:nowrap; }
 
   .range{
     -webkit-appearance:none; appearance:none;
@@ -209,102 +243,177 @@
     cursor:pointer;
   }
   .range:focus-visible::-webkit-slider-thumb{ outline:2px solid var(--focus); outline-offset:2px; }
+  /* Presence's slider (the one primary-tier range) gets a visibly bigger thumb and
+     track than the secondary/tertiary ranges elsewhere (Intensity, dials, popovers). */
+  .range-lg::-webkit-slider-runnable-track{ height:3px; }
+  .range-lg::-moz-range-track{ height:3px; }
+  .range-lg::-webkit-slider-thumb{ width:18px; height:18px; margin-top:-8px; box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent); }
+  .range-lg::-moz-range-thumb{ width:18px; height:18px; box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent); }
+  /* Dial ranges (tertiary) recede with a slightly smaller, quieter thumb. */
+  .range-sm::-webkit-slider-runnable-track{ height:1.5px; }
+  .range-sm::-moz-range-track{ height:1.5px; }
+  .range-sm::-webkit-slider-thumb{ width:11px; height:11px; margin-top:-4.5px; box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent); }
+  .range-sm::-moz-range-thumb{ width:11px; height:11px; box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent); }
 
-  .fader-ends{ display:flex; justify-content:space-between; font-size:.68rem; color:var(--ink-dim); }
+  .fader-ends{ display:flex; justify-content:space-between; font-size:var(--fs-2); color:var(--ink-dim); }
 
-  .melody-block{ display:flex; flex-direction:column; gap:.7rem; position:relative; }
-  .melody-tools{ display:flex; align-items:center; gap:.55rem; }
-  .melody-modes{ display:flex; justify-content:center; gap:1.1rem; flex-wrap:wrap; }
+  .melody-block{ display:flex; flex-direction:column; gap:var(--sp-3); position:relative; }
+  .melody-tools{ display:flex; align-items:center; gap:var(--sp-2); }
+  .melody-modes{ display:flex; justify-content:center; gap:var(--sp-4); flex-wrap:wrap; }
+  /* Melody mode buttons (notes/arp/chord) are secondary — reached for often, so a step
+     louder than the tertiary seg-btn default further down. */
+  .melody-modes .seg-btn{ font-size:var(--fs-3); color:var(--ink-dim); padding:.4rem .9rem; }
 
+  /* side-tabs (blend/tuning/midi/presets/chords/tone) are tertiary — set once, opened
+     rarely — so they stay small and quiet at rest. */
   .side-tab{
     border:1px solid var(--panel-border); background:rgba(255,255,255,.03);
-    color:var(--ink-dim); border-radius:999px; padding:.16rem .55rem;
-    font-family:'Manrope'; font-size:.6rem; letter-spacing:.04em; cursor:pointer;
+    color:var(--ink-3); border-radius:999px; padding:.3rem .65rem;
+    font-family:'Manrope'; font-size:var(--fs-1); letter-spacing:.04em; cursor:pointer;
     transition:color .2s ease, border-color .2s ease, background .2s ease;
   }
-  .side-tab:hover{ color:var(--ink); }
+  .side-tab:hover{ color:var(--ink-dim); }
+  .side-tab:active{ filter:brightness(.9); }
   .side-tab.on{ color:var(--accent); border-color:color-mix(in srgb, var(--accent) 55%, transparent); background:color-mix(in srgb, var(--accent) 12%, transparent); }
   .side-tab:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
   .side-tab[hidden]{ display:none; }
 
+  /* Popovers: tertiary content (root/scale, MIDI, presets, chord editing, tone) that
+     should appear/disappear with a short, tasteful transition rather than snapping via
+     [hidden]. The open/close JavaScript only ever toggles the `hidden` attribute — see
+     AGENT_NOTES — so the motion is done entirely in CSS: `translate`/`scale`/`opacity`
+     animate on top of the existing display:none swap via `transition-behavior:
+     allow-discrete` + `@starting-style`, both of which are no-ops in browsers that don't
+     support them (the popover then just falls back to the original instant show/hide).
+     `translate`/`scale` are used instead of `transform` so the motion composes cleanly
+     with the `transform:translateX(-50%)` the fixed-position bottom-sheet variant below
+     already needs for centering.
+     max-height + overflow-y:auto is the fix for the real bug here: .panel's
+     backdrop-filter makes it the containing block for these position:fixed popovers, so
+     the "bottom sheet" is positioned against the panel's box, not the viewport — on a
+     short window the sheet's computed position can land partly below the visible
+     viewport. Rather than fight the containing-block behavior, cap the popover's own
+     height to a safe fraction of the real viewport (vh/dvh are unaffected by containing
+     block, only position/percentage offsets are) and let it scroll internally, so
+     content can never be clipped with no way to reach it. */
   .popover{
     position:absolute; top:-.5rem; left:100%; margin-left:.75rem;
     width:11.5rem; z-index:6;
     background:var(--panel); border:1px solid var(--panel-border); border-radius:16px;
     backdrop-filter:blur(22px) saturate(1.1); -webkit-backdrop-filter:blur(22px) saturate(1.1);
     box-shadow:0 24px 60px -24px rgba(0,0,0,.65);
-    padding:.85rem .9rem; display:flex; flex-direction:column; gap:.6rem;
+    padding:var(--sp-3); display:flex; flex-direction:column; gap:var(--sp-2);
+    max-height:min(70vh, 26rem);
+    max-height:min(70dvh, 26rem);
+    overflow-y:auto; overscroll-behavior:contain;
+    opacity:1; scale:1; translate:0 0;
+    transition:opacity .16s ease, scale .16s ease, translate .16s ease, display .16s allow-discrete;
   }
-  .popover[hidden]{ display:none; }
-  .popover-title{ font-size:.64rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-dim); }
+  .popover[hidden]{
+    display:none;
+    opacity:0; scale:.98; translate:0 .375rem;
+    pointer-events:none;
+  }
+  @starting-style{
+    .popover:not([hidden]){ opacity:0; scale:.98; translate:0 .375rem; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .popover{ transition:opacity .01s linear, display .01s allow-discrete; }
+    .popover[hidden]{ scale:1; translate:0 0; }
+    @starting-style{
+      .popover:not([hidden]){ opacity:1; scale:1; translate:0 0; }
+    }
+  }
+  .popover-title{ font-size:var(--fs-1); letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); }
   #arpSection{ display:flex; flex-direction:column; gap:var(--sp-2); padding-top:var(--sp-2); margin-top:.1rem; border-top:1px solid var(--panel-border); }
   #arpSection[hidden]{ display:none; }
   .arp-subtitle{ margin:0; }
-  .popover-hint{ font-size:.6rem; color:var(--ink-dim); line-height:1.4; }
+  .popover-hint{ font-size:var(--fs-2); color:var(--ink-3); line-height:1.5; }
   .popover select{
     width:100%; background:rgba(255,255,255,.03); color:var(--ink);
     border:1px solid var(--panel-border); border-radius:8px;
-    font-family:'Manrope'; font-size:.72rem; padding:.3rem .4rem; cursor:pointer;
+    font-family:'Manrope'; font-size:var(--fs-3); padding:.3rem .4rem; cursor:pointer;
   }
-  .popover select:focus-visible{ outline:2px solid var(--focus); }
+  .popover select:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
   .chord-slot{ min-width:3.1rem; }
   .chord-slot-col{ display:flex; flex-direction:column; gap:var(--sp-1); }
   .chord-slot-col.now-playing .chord-slot{ color:var(--accent); border-color:color-mix(in srgb, var(--accent) 60%, transparent); box-shadow:0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
-  .chord-seventh{ font-size:.54rem; padding:.18rem 0; text-align:center; }
+  .chord-seventh{ font-size:var(--fs-1); padding:.22rem 0; text-align:center; }
   #chordSlots{ flex-wrap:wrap; }
   .popover .seg{ flex-wrap:wrap; }
-  /* Fixed, bottom-centered sheet below 900px (no room beside the anchor), and
-     again from the two-column breakpoint (960px) up — once .totems-row and
-     .melody-block sit in the left column, "open to my own right" would land
-     the popover on top of the right column instead of clear page margin. */
-  @media (max-width: 900px), (min-width: 960px){
+  /* Fixed, bottom-centered sheet below 900px, where there is no room beside the anchor.
+     NOT above the two-column breakpoint: .panel sets backdrop-filter, which makes it the
+     containing block for position:fixed descendants, so this "viewport sheet" is really
+     positioned against the panel — and when the panel is taller than a short window the
+     sheet lands below the fold (measured ~40px under at 1000x700). Every popover anchor
+     lives in the left column, so the default anchored `left:100%` has the whole right
+     column's width to open into and stays on screen. */
+  @media (max-width: 900px){
     .popover{ position:fixed; left:50%; top:auto; bottom:1.5rem; margin-left:0; transform:translateX(-50%); width:min(16rem,88vw); }
+  }
+
+  /* The melody block sits low in its column, so its two popovers would grow down past the
+     bottom of a short window. Anchor them to the block's lower edge and let them grow
+     upward into the space that is actually there. */
+  @media (min-width: 901px){
+    .melody-block > .popover{ top:auto; bottom:0; }
   }
 
   /* presets popover */
   .popover input[type="text"]{
     width:100%; background:rgba(255,255,255,.03); color:var(--ink);
     border:1px solid var(--panel-border); border-radius:8px;
-    font-family:'Manrope'; font-size:.72rem; padding:.3rem .4rem;
+    font-family:'Manrope'; font-size:var(--fs-3); padding:.3rem .4rem;
   }
-  .popover input[type="text"]:focus-visible{ outline:2px solid var(--focus); }
-  #linkFallbackInput{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:.62rem; }
-  .preset-save-row{ display:flex; flex-direction:column; gap:.35rem; }
-  .preset-row{ display:flex; align-items:center; gap:.3rem; }
+  .popover input[type="text"]:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
+  #linkFallbackInput{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:var(--fs-2); }
+  .preset-save-row{ display:flex; flex-direction:column; gap:var(--sp-1); }
+  .preset-row{ display:flex; align-items:center; gap:var(--sp-1); }
   .preset-row .preset-btn{ text-align:left; }
   .preset-del{
     border:1px solid var(--panel-border); background:rgba(255,255,255,.03);
-    color:var(--ink-dim); border-radius:999px; width:1.35rem; height:1.35rem;
+    color:var(--ink-3); border-radius:999px; width:1.35rem; height:1.35rem;
     display:flex; align-items:center; justify-content:center; flex:0 0 auto;
-    font-size:.72rem; line-height:1; cursor:pointer; padding:0;
+    font-size:var(--fs-3); line-height:1; cursor:pointer; padding:0;
   }
   .preset-del:hover{ color:#e2685f; border-color:color-mix(in srgb, #e2685f 55%, transparent); }
+  .preset-del:active{ filter:brightness(.9); }
   .preset-del:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
   .seg-btn.factory{ border-style:dashed; }
 
-  .seg{ display:flex; gap:.3rem; }
+  .seg{ display:flex; gap:var(--sp-1); }
+  /* Default seg-btn is the tertiary treatment (voice/rate/pattern pickers, factory
+     presets, the MIDI toggle — all live inside popovers). .melody-modes overrides this
+     above to the louder secondary size for the notes/arp/chord buttons. */
   .seg-btn{
     border:1px solid var(--panel-border); background:rgba(255,255,255,.03);
-    color:var(--ink-dim); border-radius:999px; padding:.22rem .6rem;
-    font-family:'Manrope'; font-size:.6rem; letter-spacing:.03em; cursor:pointer;
+    color:var(--ink-3); border-radius:999px; padding:.3rem .65rem;
+    font-family:'Manrope'; font-size:var(--fs-1); letter-spacing:.03em; cursor:pointer;
     transition:color .2s ease, border-color .2s ease, background .2s ease;
   }
-  .seg-btn:hover{ color:var(--ink); }
+  .seg-btn:hover{ color:var(--ink-dim); }
+  .seg-btn:active{ filter:brightness(.9); }
   .seg-btn.on{ color:var(--accent); border-color:color-mix(in srgb, var(--accent) 55%, transparent); background:color-mix(in srgb, var(--accent) 12%, transparent); }
   .seg-btn:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
-  .pads{ display:flex; gap:.55rem; justify-content:center; }
+  .pads{ display:flex; gap:var(--sp-2); justify-content:center; }
+  /* Melody pads — primary tier along with the play button and Presence: the biggest,
+     highest-contrast control surface in the panel, with a permanent hint of the live
+     accent colour (not just on .active) so the row reads as the thing to press first. */
   .pad{
-    width:3.15rem; height:3.15rem; border-radius:999px;
-    border:1px solid var(--panel-border); background:rgba(255,255,255,.03);
+    width:3.5rem; height:3.5rem; border-radius:999px;
+    border:1px solid color-mix(in srgb, var(--accent) 22%, var(--panel-border));
+    background:color-mix(in srgb, var(--accent) 6%, rgba(255,255,255,.035));
     display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
     color:var(--ink); cursor:pointer; user-select:none; touch-action:none;
     transition:border-color .15s ease, background .15s ease, box-shadow .15s ease;
   }
-  .pad .note{ font-family:'Fraunces', ui-serif, Georgia, serif; font-size:.78rem; font-weight:500; white-space:nowrap; }
-  .chord-sevenths{ display:flex; gap:.55rem; justify-content:center; margin-top:-.3rem; }
+  .pad:hover{ border-color:color-mix(in srgb, var(--accent) 38%, var(--panel-border)); }
+  .pad:active{ filter:brightness(.94); }
+  .pad .note{ font-family:'Fraunces', ui-serif, Georgia, serif; font-size:var(--fs-7); font-weight:600; white-space:nowrap; }
+  .chord-sevenths{ display:flex; gap:var(--sp-2); justify-content:center; margin-top:-.3rem; }
   .chord-sevenths[hidden]{ display:none; }
-  .pad-seventh{ font-size:.54rem; padding:.18rem 0; width:3.15rem; text-align:center; }
-  .pad .key{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:.55rem; color:var(--ink-dim); text-transform:uppercase; }
+  .pad-seventh{ font-size:var(--fs-2); padding:.22rem 0; width:3.5rem; text-align:center; }
+  .pad .key{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:var(--fs-1); color:var(--ink-3); text-transform:uppercase; }
   .pad.active{
     border-color:color-mix(in srgb, var(--accent) 70%, transparent);
     background:color-mix(in srgb, var(--accent) 24%, transparent);
@@ -312,18 +421,23 @@
   }
   .pad:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
 
-  .intensity-block{ display:flex; flex-direction:column; gap:.5rem; padding-top:.2rem; border-top:1px solid var(--panel-border); }
+  .intensity-block{ display:flex; flex-direction:column; gap:var(--sp-2); padding-top:.2rem; border-top:1px solid var(--panel-border); }
+  /* Intensity is secondary — reached for often, styled like the totems/melody-mode
+     buttons: a clear step down from Presence's primary treatment above. */
+  .intensity-block .fader-label{ font-size:var(--fs-4); color:var(--ink-dim); }
+  .intensity-block .fader-value{ font-size:var(--fs-3); color:var(--ink-dim); }
 
-  .utility-row{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.9rem 1.4rem; }
-  .quick-actions{ display:flex; gap:var(--sp-4); flex-wrap:wrap; }
+  .utility-row{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:var(--sp-3) var(--sp-4); }
+  .quick-actions{ display:flex; gap:var(--sp-4); flex-wrap:wrap; align-items:center; }
   .quick-actions button{
     background:none; border:none; color:var(--ink-dim);
-    font-family:'Manrope'; font-size:.7rem; letter-spacing:.05em;
+    font-family:'Manrope'; font-size:var(--fs-3); letter-spacing:.05em;
     cursor:pointer; padding:.15rem 0; border-bottom:1px solid transparent;
-    display:flex; align-items:center; gap:.35rem;
+    display:flex; align-items:center; gap:var(--sp-1);
   }
   .quick-actions button svg{ width:.85rem; height:.85rem; }
   .quick-actions button:hover{ color:var(--ink); border-color:var(--panel-border); }
+  .quick-actions button:active{ filter:brightness(.85); }
   .quick-actions button:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
   .quick-actions button.recording{ color:#e2685f; }
   .quick-actions button.recording svg{ animation:recPulse 1.4s ease-in-out infinite; }
@@ -331,63 +445,77 @@
   .quick-actions button:disabled{ opacity:.45; cursor:default; }
   .quick-actions button:disabled:hover{ color:var(--ink-dim); border-color:transparent; }
   @keyframes recPulse{ 0%,100%{ opacity:1; } 50%{ opacity:.35; } }
+  /* stems + loop-export are tertiary ("set once and forget") — quieter than the other
+     quick actions (fade/next chord/loop/record/freeze) they sit alongside. */
+  .quick-actions #chipStems, .quick-actions #loopCaptureBtn{ color:var(--ink-3); font-size:var(--fs-1); }
+  .quick-actions #chipStems:hover, .quick-actions #loopCaptureBtn:hover{ color:var(--ink-dim); }
+  /* Freeze is a real-time performance toggle, not a set-and-forget one — keep it at the
+     secondary weight of the other quick actions rather than the tertiary .chip default. */
+  .chip.chip-secondary{ font-size:var(--fs-3); color:var(--ink-dim); padding:.32rem .8rem; }
 
   .rec-status{
-    font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:.66rem;
+    font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:var(--fs-2);
     color:var(--ink-dim); font-variant-numeric:tabular-nums; align-self:center;
   }
   .rec-status.warn{ color:#e2685f; }
 
+  /* auto fade is tertiary: set once, then ignored until the countdown near the end. */
   .autofade{ display:flex; align-items:center; gap:var(--sp-2); }
-  .autofade label{ font-size:.66rem; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-dim); }
+  .autofade label{ font-size:var(--fs-1); letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); }
   .autofade select{
-    background:transparent; color:var(--ink-dim); border:none; border-bottom:1px solid var(--panel-border);
-    font-family:'Manrope'; font-size:.72rem; padding:.15rem .1rem; cursor:pointer;
+    background:transparent; color:var(--ink-3); border:none; border-bottom:1px solid var(--panel-border);
+    font-family:'Manrope'; font-size:var(--fs-2); padding:.15rem .1rem; cursor:pointer;
   }
-  .autofade select:focus-visible{ outline:2px solid var(--focus); }
-  .autofade .countdown{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:.68rem; color:var(--accent); min-width:2.6em; }
+  .autofade select:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
+  .autofade .countdown{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:var(--fs-2); color:var(--accent); min-width:2.6em; }
 
+  /* loop length is one of the tertiary loop-export controls (see #loopCaptureBtn above). */
   #loopLen{
-    background:transparent; color:var(--ink-dim); border:none; border-bottom:1px solid var(--panel-border);
-    font-family:'Manrope'; font-size:.7rem; padding:.15rem .1rem; cursor:pointer; align-self:center;
+    background:transparent; color:var(--ink-3); border:none; border-bottom:1px solid var(--panel-border);
+    font-family:'Manrope'; font-size:var(--fs-1); padding:.15rem .1rem; cursor:pointer; align-self:center;
   }
-  #loopLen:focus-visible{ outline:2px solid var(--focus); }
+  #loopLen:hover{ color:var(--ink-dim); }
+  #loopLen:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
   #loopLen:disabled{ opacity:.45; cursor:default; }
 
-  /* secondary dials */
-  .dials{ display:grid; grid-template-columns:repeat(2,1fr); gap:1.3rem 1.6rem; }
+  /* tertiary dials — set once and forgotten, so they recede: quieter ink tone, smaller
+     type, and (via .range-sm on the inputs themselves) a smaller slider thumb. */
+  .dials{ display:grid; grid-template-columns:repeat(2,1fr); gap:var(--sp-4) var(--sp-5); }
   .dial{ display:flex; flex-direction:column; gap:var(--sp-2); }
   .dial-top{ display:flex; justify-content:space-between; }
-  .dial-label{ font-size:.66rem; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-dim); }
-  .dial-value{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:.66rem; color:var(--ink-dim); font-variant-numeric:tabular-nums; }
+  .dial-label{ font-size:var(--fs-1); letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3); }
+  .dial-value{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:var(--fs-1); color:var(--ink-3); font-variant-numeric:tabular-nums; }
 
   .layers-toggle{
     align-self:center;
-    background:none; border:none; color:var(--ink-dim);
-    font-size:.64rem; letter-spacing:.14em; text-transform:uppercase;
+    background:none; border:none; color:var(--ink-3);
+    font-size:var(--fs-1); letter-spacing:.14em; text-transform:uppercase;
     cursor:pointer; padding:.1rem .4rem; margin-top:-.6rem;
   }
-  .layers-toggle:hover{ color:var(--ink); }
+  .layers-toggle:hover{ color:var(--ink-dim); }
   .layers-toggle:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
 
-  .layers-row{ display:flex; gap:.6rem; justify-content:center; flex-wrap:wrap; }
+  .layers-row{ display:flex; gap:var(--sp-2); justify-content:center; flex-wrap:wrap; }
+  /* Layer chips are tertiary by default. .chip-secondary (used only by #chipFreeze,
+     which lives in .utility-row, not here) opts back up to the louder secondary size. */
   .chip{
     border:1px solid var(--panel-border); background:rgba(255,255,255,.03);
-    color:var(--ink-dim); border-radius:999px; padding:.35rem .95rem;
-    font-family:'Manrope'; font-size:.68rem; letter-spacing:.03em; cursor:pointer;
-    transition:color .3s ease, border-color .3s ease, background .3s ease;
+    color:var(--ink-3); border-radius:999px; padding:.32rem .8rem;
+    font-family:'Manrope'; font-size:var(--fs-1); letter-spacing:.03em; cursor:pointer;
+    transition:color .2s ease, border-color .2s ease, background .2s ease;
   }
-  .chip:hover{ color:var(--ink); }
+  .chip:hover{ color:var(--ink-dim); }
+  .chip:active{ filter:brightness(.9); }
   .chip.on{ color:var(--accent); border-color:color-mix(in srgb, var(--accent) 55%, transparent); background:color-mix(in srgb, var(--accent) 12%, transparent); }
   .chip:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
 
   footer.readout{
     font-family:'IBM Plex Mono', ui-monospace, monospace;
-    font-size:.72rem;
+    font-size:var(--fs-4);
     color:var(--ink-dim);
     display:flex; justify-content:space-between; align-items:center;
     border-top:1px solid var(--panel-border);
-    padding-top:1rem;
+    padding-top:var(--sp-4);
   }
   footer.readout .dot{
     width:6px; height:6px; border-radius:999px; background:var(--accent);
@@ -395,10 +523,19 @@
   }
   footer.readout .left{ display:flex; align-items:center; gap:var(--sp-2); }
 
-  .note{
-    font-size:.68rem; color:var(--ink-dim); line-height:1.5;
-    border-top:1px solid var(--panel-border); padding-top:.9rem;
+  /* The recording note: three short paragraphs (see markup) instead of one dense block,
+     with a touch more size/line-height than the rest of the tertiary copy so it reads
+     as prose rather than a settings caption. Named .rec-note rather than reusing .note —
+     that class already belongs to the note-NAME span inside each melody pad (.pad .note),
+     and scoping this block generically as .note would have leaked its flex/border/color
+     onto the pads' note-name text too. */
+  .rec-note{
+    display:flex; flex-direction:column; gap:var(--sp-2);
+    font-size:var(--fs-2); color:var(--ink-3); line-height:1.6;
+    border-top:1px solid var(--panel-border); padding-top:var(--sp-3);
   }
+  .rec-note p{ margin:0; }
+  .rec-note .rec-note-lede{ color:var(--ink-dim); }
 
   @media (max-width:480px){
     .stage{
@@ -407,31 +544,33 @@
       padding-left:1rem; padding-right:1rem;
     }
     .mark{ top:max(1rem, env(safe-area-inset-top) + .5rem); left:max(1rem, env(safe-area-inset-left) + .5rem); }
-    .mark-name{ font-size:1.2rem; }
-    .chord-mark{ bottom:max(1rem, env(safe-area-inset-bottom) + .5rem); left:max(1rem, env(safe-area-inset-left) + .5rem); font-size:.72rem; }
+    .mark-name{ font-size:var(--fs-8); }
+    .chord-mark{ bottom:max(1rem, env(safe-area-inset-bottom) + .5rem); left:max(1rem, env(safe-area-inset-left) + .5rem); font-size:var(--fs-4); }
     .panel{ padding:1.5rem 1.2rem 1.2rem; gap:1.3rem; border-radius:20px; }
-    .totems-row{ gap:.35rem; }
+    .totems-row{ gap:var(--sp-1); }
     /* Eight biomes don't fit one phone row without shrinking the totems below a usable tap
        target, so cap the group at four across and let it wrap to a balanced 4+4 instead of
        leaving a single orphan on the second row. */
-    .totems{ gap:.4rem; max-width:9.75rem; }
+    .totems{ gap:var(--sp-1); max-width:9.75rem; }
     .totem{ width:2.05rem; height:2.05rem; }
     .totem svg{ width:.95rem; height:.95rem; }
-    .core{ gap:.9rem; }
-    .breathe{ width:3.3rem; height:3.3rem; }
-    .breathe svg{ width:1.1rem; height:1.1rem; }
-    .pads{ gap:.4rem; }
+    .core{ gap:var(--sp-3); }
+    /* Play stays the biggest touch target on the page even on a phone — only a small
+       bump over the previous size, well inside .core's flexible layout. */
+    .breathe{ width:3.5rem; height:3.5rem; }
+    .breathe svg{ width:1.15rem; height:1.15rem; }
+    .pads{ gap:var(--sp-1); }
     .pad{ width:2.65rem; height:2.65rem; }
     .pad-seventh{ width:2.65rem; }
-    .dials{ gap:1rem .9rem; }
-    .layers-row{ gap:.45rem; }
+    .dials{ gap:var(--sp-4) var(--sp-3); }
+    .layers-row{ gap:var(--sp-2); }
     /* Melody's fader-top packs a label plus a value AND two side-tab buttons (unlike
        Presence/Intensity's plain label+value), so at phone widths it no longer fits on one
        line — the value text used to wrap mid-string ("1 · 3 ·" / "5 · 7") right under
        "MELODY". Let the tools group drop to its own line instead of letting the text itself
        break. */
-    .melody-block .fader-top{ flex-wrap:wrap; row-gap:.35rem; }
-    .melody-tools{ flex-basis:100%; justify-content:flex-end; flex-wrap:wrap; row-gap:.3rem; }
+    .melody-block .fader-top{ flex-wrap:wrap; row-gap:var(--sp-2); }
+    .melody-tools{ flex-basis:100%; justify-content:flex-end; flex-wrap:wrap; row-gap:var(--sp-1); }
   }
 </style>
 </head>
@@ -491,7 +630,7 @@
           <option value="ocean">Ocean</option>
           <option value="void">Void</option>
         </select>
-        <input type="range" class="range" id="blendAmount" min="0" max="100" value="0" aria-label="Blend amount" />
+        <input type="range" class="range range-sm" id="blendAmount" min="0" max="100" value="0" aria-label="Blend amount" />
         <div class="fader-ends"><span>none</span><span>even mix</span></div>
       </div>
       <button class="side-tab" id="tuningTab" aria-expanded="false" aria-controls="tuningPopover">tuning</button>
@@ -538,7 +677,7 @@
           <span class="fader-label">Keyboard level</span>
           <span class="fader-value" id="midiLevelValue">100%</span>
         </div>
-        <input type="range" class="range" id="midiLevel" min="0" max="200" value="100" aria-label="MIDI keyboard level" />
+        <input type="range" class="range range-sm" id="midiLevel" min="0" max="200" value="100" aria-label="MIDI keyboard level" />
         <p class="popover-hint">Every key plays in the current scale — middle C is the tonic, and it spans octaves as you play up or down. Sustain pedal and mod wheel work if your controller sends them.</p>
       </div>
       <button class="side-tab" id="presetsTab" aria-expanded="false" aria-controls="presetsPopover">presets</button>
@@ -575,7 +714,7 @@
           <span class="fader-label">Presence</span>
           <span class="fader-value" id="presenceValue">0%</span>
         </div>
-        <input type="range" class="range" id="presence" min="0" max="100" value="35" aria-label="Presence" />
+        <input type="range" class="range range-lg" id="presence" min="0" max="100" value="35" aria-label="Presence" />
         <div class="fader-ends"><span>silent</span><span>felt</span></div>
       </div>
     </div>
@@ -663,7 +802,7 @@
           <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4l7 6-7 6V4z"/><rect x="13" y="4" width="2.4" height="12" rx="1"/></svg>
           next chord
         </button>
-        <button class="chip" id="chipFreeze" aria-pressed="false" aria-label="Freeze the current chord — pauses the progression indefinitely" title="Pin the current chord: the progression stops advancing until you unfreeze">freeze</button>
+        <button class="chip chip-secondary" id="chipFreeze" aria-pressed="false" aria-label="Freeze the current chord — pauses the progression indefinitely" title="Pin the current chord: the progression stops advancing until you unfreeze">freeze</button>
         <button id="loopBtn" aria-label="Record a melody loop" aria-pressed="false">
           <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="5" fill="currentColor" stroke="none"/></svg>
           <span id="loopLabel">loop</span>
@@ -702,19 +841,19 @@
     <div class="dials">
       <div class="dial">
         <div class="dial-top"><span class="dial-label">Density</span><span class="dial-value" id="densityValue">30</span></div>
-        <input type="range" class="range" id="density" min="0" max="100" value="30" aria-label="Density" />
+        <input type="range" class="range range-sm" id="density" min="0" max="100" value="30" aria-label="Density" />
       </div>
       <div class="dial">
         <div class="dial-top"><span class="dial-label">Air</span><span class="dial-value" id="airValue">45</span></div>
-        <input type="range" class="range" id="air" min="0" max="100" value="45" aria-label="Air" />
+        <input type="range" class="range range-sm" id="air" min="0" max="100" value="45" aria-label="Air" />
       </div>
       <div class="dial">
         <div class="dial-top"><span class="dial-label">Warmth</span><span class="dial-value" id="warmthValue">40</span></div>
-        <input type="range" class="range" id="warmth" min="0" max="100" value="40" aria-label="Warmth" />
+        <input type="range" class="range range-sm" id="warmth" min="0" max="100" value="40" aria-label="Warmth" />
       </div>
       <div class="dial">
         <div class="dial-top"><span class="dial-label">Key</span><span class="dial-value" id="transposeValue">0 st</span></div>
-        <input type="range" class="range" id="transpose" min="-12" max="12" value="0" aria-label="Key shift in semitones" />
+        <input type="range" class="range range-sm" id="transpose" min="-12" max="12" value="0" aria-label="Key shift in semitones" />
       </div>
     </div>
 
@@ -735,7 +874,11 @@
       <span id="modeReadout">Dune Drift</span>
     </footer>
 
-    <p class="note">Recording captures exactly what Presence lets through — press Play, dial it in, then hit record. Stopping it saves the full mix (uncompressed <code>.wav</code>) and, if you played anything, a <code>.mid</code> file of the notes. Turn on <strong>stems</strong> first to also get separate <code>bed</code> and <code>melody</code> <code>.wav</code> files (pre-reverb, ready for a DAW) — that roughly triples the memory a long take holds, so it's off by default. A take auto-stops and saves at 15 minutes.</p>
+    <div class="rec-note">
+      <p class="rec-note-lede">Recording captures exactly what Presence lets through — press Play, dial it in, then hit record.</p>
+      <p>Stopping it saves the full mix (uncompressed <code>.wav</code>) and, if you played anything, a <code>.mid</code> file of the notes.</p>
+      <p>Turn on <strong>stems</strong> first for separate <code>bed</code> and <code>melody</code> <code>.wav</code> files too, ready for a DAW — roughly triples the memory a long take holds, so it's off by default. A take auto-stops and saves at 15 minutes.</p>
+    </div>
     </div>
   </div>
 </main>
