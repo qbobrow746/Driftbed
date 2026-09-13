@@ -600,6 +600,7 @@
           <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 4l7 6-7 6V4z"/><rect x="13" y="4" width="2.4" height="12" rx="1"/></svg>
           next chord
         </button>
+        <button class="chip" id="chipFreeze" aria-pressed="false" aria-label="Freeze the current chord — pauses the progression indefinitely" title="Pin the current chord: the progression stops advancing until you unfreeze">freeze</button>
         <button id="loopBtn" aria-label="Record a melody loop">
           <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="5" fill="currentColor" stroke="none"/></svg>
           <span id="loopLabel">loop</span>
@@ -653,6 +654,7 @@
       <button class="chip" id="chipPulse" aria-pressed="true" title="Let the visual field react to the actual sound (level and tone), not just the Presence slider">pulse</button>
       <button class="chip" id="chipBreathe" aria-pressed="false">breathe</button>
       <button class="chip" id="chipPerformer" aria-pressed="false" title="Let the instrument perform its own melody, hands-free">auto</button>
+      <button class="chip" id="chipTape" aria-pressed="false" aria-label="Tape character — saturation and wow/flutter on the master output" title="Warm saturation plus slow pitch wobble, like a well-loved tape deck">tape</button>
     </div>
 
     <footer class="readout">
@@ -820,6 +822,8 @@
     stemsOn:false,
     performerOn:false,
     midiOn:false,
+    freezeOn:false,
+    tapeOn:false,
     playing:false
   };
 
@@ -862,6 +866,9 @@
 
   // ---------- audio engine ----------
   let ctx=null, masterGain, brightness, dryGain, wetGain, convolver, voiceBus, bedBus, melodyBus;
+  // "Tape" character: built once in initAudio() and left permanently inline; toggling only
+  // ramps tapeDryGain/tapeWetGain (see applyTapeOn()) so the live graph is never rewired.
+  let preMaster, tapeDryGain, tapeWetGain, tapeShaper, tapeWowDelay, tapeHissSource, tapeHissFilter;
   // Read-only analyser tap for the visual field (see "ambient field" section below) — fed
   // from masterGain but never chained onward, so it only observes the mix and never alters
   // it. analyserTimeData/analyserFreqData are preallocated once here (not per animation
@@ -879,6 +886,12 @@
   let blendGain, blendChordIndex = 0, blendChordTimer = null, blendActiveVoices = [];
   let chordIndex = 0;
   let chordTimer = null, sparkleTimer = null;
+  // chordTimerFireAt: wall-clock ms (Date.now()) at which the pending chordTimer will fire —
+  // recorded purely so freeze can compute how much time was left when it paused the timer.
+  // freezeRemainingMs: the leftover ms captured by that pause, consumed exactly once by the
+  // matching unfreeze so the loop resumes at the same point instead of restarting a full
+  // chordDur or firing immediately. See setFreeze()/reconcileFreezeTimer() below.
+  let chordTimerFireAt = null, freezeRemainingMs = null;
   let activeVoices = [];
   const MAX_GAIN = 0.42;
 
@@ -961,8 +974,67 @@
     chorusWet.connect(voiceBus);
 
     voiceBus.connect(brightness);
-    brightness.connect(dryGain); dryGain.connect(masterGain);
-    brightness.connect(convolver); convolver.connect(wetGain); wetGain.connect(masterGain);
+    // preMaster is the clean mix — exactly what used to feed masterGain directly (dry +
+    // reverb-wet, summed). It's an extra unity-gain hop purely so the tape chain below has
+    // a single clean point to tap without touching the dry/wet nodes themselves.
+    preMaster = ctx.createGain(); preMaster.gain.value = 1;
+    brightness.connect(dryGain); dryGain.connect(preMaster);
+    brightness.connect(convolver); convolver.connect(wetGain); wetGain.connect(preMaster);
+
+    // ---------- tape character: saturation + wow/flutter, always inline, toggled by crossfade ----------
+    // preMaster always feeds BOTH branches below; only tapeDryGain/tapeWetGain's levels
+    // change on toggle (see applyTapeOn()). With tape off (tapeDryGain=1, tapeWetGain=0) the
+    // signal into masterGain is exactly preMaster's, passed through one unity-gain node —
+    // bit-identical to the old direct preMaster->masterGain link, so "off" truly can't alter
+    // level or leak any tape colour. With tape on it's the reverse, so only one branch is
+    // ever actually audible; nothing is ever connected/disconnected while playing.
+    tapeDryGain = ctx.createGain(); tapeDryGain.gain.value = 1;
+    tapeWetGain = ctx.createGain(); tapeWetGain.gain.value = 0;
+    preMaster.connect(tapeDryGain); tapeDryGain.connect(masterGain);
+
+    // Saturation: a gentle tanh soft-clip, normalized so full-scale input still reaches
+    // full-scale output (no level change at the extremes) — warmth near 0, soft rounding
+    // near the peaks, never hard clipping. oversample smooths the curve's inherent aliasing.
+    tapeShaper = ctx.createWaveShaper();
+    tapeShaper.curve = makeTapeSaturationCurve();
+    tapeShaper.oversample = '4x';
+
+    // Wow & flutter: a short delay line whose delayTime is wobbled by two LFOs — a slow
+    // "wow" (~0.35Hz, ~1.5ms depth) for the lazy pitch drift of a slightly worn transport,
+    // and a faster, much smaller "flutter" (~7.5Hz, ~0.4ms depth) on top. Base delay (8ms)
+    // stays comfortably above the combined depth so delayTime never goes negative.
+    tapeWowDelay = ctx.createDelay(0.05);
+    tapeWowDelay.delayTime.value = 0.008;
+    const tapeWowLfo = ctx.createOscillator();
+    tapeWowLfo.frequency.value = 0.35;
+    const tapeWowDepth = ctx.createGain();
+    tapeWowDepth.gain.value = 0.0015;
+    tapeWowLfo.connect(tapeWowDepth); tapeWowDepth.connect(tapeWowDelay.delayTime);
+    tapeWowLfo.start();
+    const tapeFlutterLfo = ctx.createOscillator();
+    tapeFlutterLfo.frequency.value = 7.5;
+    const tapeFlutterDepth = ctx.createGain();
+    tapeFlutterDepth.gain.value = 0.0004;
+    tapeFlutterLfo.connect(tapeFlutterDepth); tapeFlutterDepth.connect(tapeWowDelay.delayTime);
+    tapeFlutterLfo.start();
+
+    preMaster.connect(tapeShaper); tapeShaper.connect(tapeWowDelay); tapeWowDelay.connect(tapeWetGain);
+
+    // A very quiet broadband hiss, folded into the same tapeWetGain crossfade so it only
+    // ever sounds alongside the rest of the tape colour, never as an always-on noise floor.
+    tapeHissSource = ctx.createBufferSource();
+    tapeHissSource.buffer = makeNoiseBuffer(4);
+    tapeHissSource.loop = true;
+    tapeHissFilter = ctx.createBiquadFilter();
+    tapeHissFilter.type = 'highpass';
+    tapeHissFilter.frequency.value = 4000;
+    const tapeHissLevel = ctx.createGain();
+    tapeHissLevel.gain.value = 0.0025;
+    tapeHissSource.connect(tapeHissFilter); tapeHissFilter.connect(tapeHissLevel); tapeHissLevel.connect(tapeWetGain);
+    tapeHissSource.start();
+
+    tapeWetGain.connect(masterGain);
+
     masterGain.connect(ctx.destination);
 
     // Visual analyser tap — a side branch off masterGain, not inserted inline in the signal
@@ -1029,6 +1101,30 @@
     blendGain = ctx.createGain();
     blendGain.gain.value = 0;
     blendGain.connect(voiceBus);
+
+    applyTapeOn(state.tapeOn);
+  }
+
+  // Gentle tanh soft-clip curve for the tape saturation WaveShaper — near-linear around 0,
+  // softening only as it approaches full scale, and normalized (divided by tanh(k)) so a
+  // full-scale input still maps to a full-scale output. k=1.6 keeps this to warmth/rounding
+  // rather than audible distortion, per this being an ambient instrument, not a fuzz pedal.
+  function makeTapeSaturationCurve(){
+    const n = 1024, k = 1.6, norm = Math.tanh(k);
+    const curve = new Float32Array(n);
+    for(let i=0;i<n;i++){
+      const x = (i/(n-1))*2 - 1;
+      curve[i] = Math.tanh(k*x) / norm;
+    }
+    return curve;
+  }
+  function applyTapeOn(on){
+    if(!ctx || !tapeDryGain) return;
+    const now = ctx.currentTime;
+    // setTargetAtTime rather than a hard/linear switch — a smooth ~0.4s crossfade either way
+    // so toggling mid-playback never clicks or drops out.
+    tapeDryGain.gain.setTargetAtTime(on ? 0 : 1, now, 0.4);
+    tapeWetGain.gain.setTargetAtTime(on ? 1 : 0, now, 0.4);
   }
 
   function applyWarmth(v){
@@ -1189,6 +1285,10 @@
     outgoing.forEach(g => fadeOutGroup(g, biome.crossfade, blendActiveVoices));
   }
   function scheduleBlendChord(){
+    // Freeze pins the blended layer too — otherwise freezing with a blend active would hold
+    // the main harmony while the second biome kept moving underneath it, which is not what
+    // "freeze" means to anyone listening.
+    if(state.freezeOn) return;
     const biome = BIOMES[state.blendBiome];
     blendChordTimer = setTimeout(()=>{
       blendChordIndex++;
@@ -1222,13 +1322,72 @@
     updateChordEditor();
   }
 
-  function scheduleNextChord(){
-    const biome = BIOMES[state.biome];
+  // Arms the raw timer for the next automatic advance, `ms` from now, and records when it
+  // will fire (chordTimerFireAt) so a freeze engaged partway through can compute the exact
+  // remainder. Only scheduleNextChord()/setFreeze() should call this.
+  function armChordTimer(ms){
+    chordTimerFireAt = Date.now() + ms;
     chordTimer = setTimeout(()=>{
+      chordTimer = null; chordTimerFireAt = null;
       chordIndex++;
       playCurrentChord();
       scheduleNextChord();
-    }, biome.chordDur*1000);
+    }, ms);
+  }
+
+  function scheduleNextChord(){
+    // Any call here supersedes whatever a previous freeze pause was holding onto (a fresh
+    // biome switch, a manual advance, or simply starting playback all make old leftover time
+    // meaningless) — so always clear it, then either stay silent while frozen or arm normally.
+    freezeRemainingMs = null;
+    if(state.freezeOn) return;
+    const biome = BIOMES[state.biome];
+    armChordTimer(biome.chordDur*1000);
+  }
+
+  // ---------- freeze: pin the current chord, suppressing the automatic advance ----------
+  // Reuses the existing chord machinery rather than a parallel voice path: the pad voices
+  // spawned by playCurrentChord() already sustain on their own (nothing fades them out but
+  // fadeOutGroup/stopAllChords), so freezing is just "don't call scheduleNextChord's timer
+  // callback" — the currently-sounding group is left exactly as-is.
+  function reconcileFreezeTimer(){
+    if(!state.playing || !ctx) return;
+    if(state.freezeOn){
+      // Pause: stop the pending advance but remember how much time was left on it.
+      if(chordTimer){
+        clearTimeout(chordTimer);
+        freezeRemainingMs = Math.max(0, chordTimerFireAt - Date.now());
+        chordTimer = null; chordTimerFireAt = null;
+      }
+      // The blended second biome runs its own independent loop; hold it as well. It resumes
+      // on a fresh full cycle rather than an exact remainder — it's a secondary texture with
+      // no downbeat to land on, so the extra bookkeeping would buy nothing audible.
+      if(blendChordTimer){ clearTimeout(blendChordTimer); blendChordTimer = null; }
+    } else if(!chordTimer){
+      // Resume: if a pause left a remainder, arm exactly that much so the next chord change
+      // lands where it originally would have (no jump, no immediate re-trigger). Otherwise
+      // (frozen before anything was ever scheduled) start a normal full-length cycle.
+      if(freezeRemainingMs != null){
+        const ms = freezeRemainingMs;
+        freezeRemainingMs = null;
+        armChordTimer(ms);
+      } else {
+        scheduleNextChord();
+      }
+      if(state.blendBiome && !blendChordTimer) scheduleBlendChord();
+    }
+  }
+  function updateFreezeUI(){
+    const btn = document.getElementById('chipFreeze');
+    if(!btn) return;
+    btn.classList.toggle('on', state.freezeOn);
+    btn.setAttribute('aria-pressed', String(state.freezeOn));
+  }
+  function setFreeze(on){
+    state.freezeOn = on;
+    reconcileFreezeTimer();
+    updateFreezeUI();
+    persist();
   }
 
   function advanceChord(){
@@ -2517,6 +2676,8 @@
     // NEVER auto-connected on load (see the "Connect to Web MIDI" wiring further down);
     // restoring it true only changes the popover's status text, prompting a re-click.
     out.midiOn = typeof input.midiOn==='boolean' ? input.midiOn : d.midiOn;
+    out.freezeOn = typeof input.freezeOn==='boolean' ? input.freezeOn : d.freezeOn;
+    out.tapeOn = typeof input.tapeOn==='boolean' ? input.tapeOn : d.tapeOn;
     out.playing = false;
     return out;
   }
@@ -2741,6 +2902,12 @@
   wireChip('chipPerformer', 'performerOn', ()=>{
     if(state.performerOn && state.playing) startPerformer(); else stopPerformer();
   });
+  // freeze needs custom logic (pause/resume the chord timer), not the generic toggle-and-
+  // persist that wireChip does, so it's wired by hand rather than via wireChip().
+  document.getElementById('chipFreeze').addEventListener('click', ()=>{
+    setFreeze(!state.freezeOn);
+  });
+  wireChip('chipTape', 'tapeOn', ()=>{ if(ctx) applyTapeOn(state.tapeOn); });
 
   const SEG_KEY_MAP = { mode:'melodyMode', voice:'voice', rate:'arpRate', pattern:'arpPattern' };
   function segDatasetKey(btn){
@@ -3152,6 +3319,8 @@
     syncChip('chipBreathe','autoBreathe');
     syncChip('chipStems','stemsOn');
     syncChip('chipPerformer','performerOn');
+    syncChip('chipFreeze','freezeOn');
+    syncChip('chipTape','tapeOn');
     // midiOn never auto-connects (see the "Connect to Web MIDI" wiring) — this just
     // refreshes the popover's status text/button label for the restored preference.
     updateMidiStatusUI();
@@ -3181,6 +3350,10 @@
       updateNoiseLevel(state.intensity);
       applyBlendAmount(state.blendAmount);
       if(biome) applyBiomeEcho(biome); // echoOn may have changed even if the biome didn't
+      applyTapeOn(state.tapeOn); // tapeOn may have changed even if playback didn't restart
+      // freezeOn may have just changed via a loaded preset/permalink (loadSound() assigns
+      // state directly, bypassing setFreeze()) — bring the actual timer in line with it.
+      reconcileFreezeTimer();
       if(state.playing) setPresence(state.presence, 2.5);
     }
     if(!state.playing) visualPresenceTarget = state.presence/100;

@@ -25,8 +25,8 @@ Orchestrator: Opus 5 (plans + verifies + commits). Builders: Sonnet 5 agents, on
 | 3 | Scale + root decoupled from biome | done, browser-verified | `cd44675` |
 | 4 | Audio-reactive visuals (AnalyserNode) | done, browser-verified | `28c4692` |
 | 5 | Generative auto-melodist | done, browser-verified | `2cd3c55` |
-| 6 | Web MIDI input | dispatched | — |
-| 7 | Freeze + tape character | queued | — |
+| 6 | Web MIDI input | done, browser-verified | `20ca3c5` |
+| 7 | Freeze + tape character | dispatched | — |
 | 8 | Three new biomes (rain/marsh, ocean/tide, void/nebula) | queued | — |
 | 9 | Seamless loop export for game use | queued | — |
 | 10 | Mobile + a11y polish pass + README | queued | — |
@@ -53,6 +53,15 @@ width control, "song mode" arc across biomes.
   `mobile-web-app-capable` matched `apple-mobile-web-app-capable` as a substring. Fixed by wrapping
   the block in paired `<!-- installable app metadata -->` / `<!-- /... -->` comments. Lesson for
   later units: a "contains" match on an HTML attribute value can collide with a longer name.
+- Orchestrator caught a real defect in unit 6 that the agent had self-reported but mis-classified
+  as a taste decision: the MIDI anchor octave was copied from the pads (octave 4), but pads span
+  one octave while a keyboard spans ~4 either side of middle C and compounds on top of the anchor,
+  putting middle C at 1318Hz and an 88-key's top near 10kHz. Fixed to 2. General lesson: when an
+  agent reports an odd number as "deliberate", check the arithmetic against a physical reference.
+- Testing a device API with no device: stub it. Unit 6 was fully exercised by replacing
+  `navigator.requestMIDIAccess` with a fake resolving to a Map holding a fake input object, then
+  calling `fakeInput.onmidimessage({data:new Uint8Array([0x90,60,100])})` by hand. Same trick will
+  work for any future hardware-dependent feature.
 - Canvas/visual verification gotcha: `requestAnimationFrame` is throttled while the Browser pane is
   hidden, so the canvas reads as all-zero pixels and any promise that waits on rAF never settles
   (the JS tool then times out at 45s). Front the tab (`tabs_select`) and take a screenshot to force
