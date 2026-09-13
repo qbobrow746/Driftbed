@@ -29,7 +29,17 @@ visual weight.
 | 2 | Visual hierarchy + craft pass (type, spacing, states, transitions) | done, browser-verified | `6c6de27` |
 | 3 | First-run guidance + honest labels (Presence = volume) | done, browser-verified | `ce092db` |
 | 4 | The canvas field: depth, per-biome signature, grading | done, browser-verified | `e276f33` |
-| 5 | Stretch: now-playing state + micro-interactions | dispatched | — |
+| 5 | Stretch: now-playing state + micro-interactions | done, browser-verified | `bb571e9` |
+
+**Run 2 complete — all 5 units landed inside the 90 minutes.** Panel 560x1082 (scrolling) →
+1024x673 (no scroll) at 1280x900. 61fps on desert, aurora and void after fixing a starfield
+scaling cost. Nothing deployed.
+
+Two defects the orchestrator introduced and then caught by measuring rather than reading:
+the wide-width bottom-sheet popover rule (landed popovers below the fold, because `.panel`'s
+backdrop-filter makes it the containing block for position:fixed), and a temporal dead zone crash
+from repainting the star layer in `resize()` — function declarations hoist, so a `typeof` guard
+does not protect against a `const` that has not initialized yet; the gating flag must be `var`.
 
 ## Notes for this run
 
