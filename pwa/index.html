@@ -115,6 +115,24 @@
     margin:auto;
   }
 
+  /* .panel-col groups the panel's children into two visual columns on wide
+     viewports. Below the breakpoint each wrapper is display:contents, so its
+     children behave exactly as if they were direct children of .panel (the
+     phone/tablet layout is untouched — same flex column, same 1.8rem gap). */
+  .panel-col{ display:contents; }
+  @media (min-width:960px){
+    .panel{
+      width:min(64rem, 100%);
+      flex-direction:row;
+      align-items:flex-start;
+      gap:var(--sp-6);
+    }
+    .panel-col{
+      display:flex; flex-direction:column; gap:1.8rem;
+      flex:1 1 0; min-width:0;
+    }
+  }
+
   /* biome totems */
   .totems-row{ position:relative; display:flex; align-items:center; justify-content:center; gap:.6rem; flex-wrap:wrap; }
   .totems{ display:flex; gap:.6rem; align-self:center; flex-wrap:wrap; justify-content:center; }
@@ -246,7 +264,11 @@
   .chord-seventh{ font-size:.54rem; padding:.18rem 0; text-align:center; }
   #chordSlots{ flex-wrap:wrap; }
   .popover .seg{ flex-wrap:wrap; }
-  @media (max-width: 900px){
+  /* Fixed, bottom-centered sheet below 900px (no room beside the anchor), and
+     again from the two-column breakpoint (960px) up — once .totems-row and
+     .melody-block sit in the left column, "open to my own right" would land
+     the popover on top of the right column instead of clear page margin. */
+  @media (max-width: 900px), (min-width: 960px){
     .popover{ position:fixed; left:50%; top:auto; bottom:1.5rem; margin-left:0; transform:translateX(-50%); width:min(16rem,88vw); }
   }
 
@@ -438,6 +460,7 @@
 
 <main class="stage">
   <div class="panel">
+    <div class="panel-col">
     <div class="totems-row">
       <div class="totems" role="group" aria-label="Biome">
         <button class="totem" data-biome="desert" aria-label="Desert" title="Desert">
@@ -568,6 +591,15 @@
       </div>
     </div>
 
+    <div class="intensity-block">
+      <div class="fader-top">
+        <span class="fader-label">Intensity</span>
+        <span class="fader-value" id="intensityValue">50</span>
+      </div>
+      <input type="range" class="range" id="intensity" min="0" max="100" value="50" aria-label="Intensity" />
+      <div class="fader-ends"><span>calm</span><span>alive</span></div>
+    </div>
+
     <div class="melody-block">
       <div class="fader-top">
         <span class="fader-label">Melody</span>
@@ -631,14 +663,8 @@
       </div>
     </div>
 
-    <div class="intensity-block">
-      <div class="fader-top">
-        <span class="fader-label">Intensity</span>
-        <span class="fader-value" id="intensityValue">50</span>
-      </div>
-      <input type="range" class="range" id="intensity" min="0" max="100" value="50" aria-label="Intensity" />
-      <div class="fader-ends"><span>calm</span><span>alive</span></div>
     </div>
+    <div class="panel-col">
 
     <div class="utility-row">
       <div class="quick-actions">
@@ -721,6 +747,7 @@
     </footer>
 
     <p class="note">Recording captures exactly what Presence lets through — press Play, dial it in, then hit record. Stopping it saves the full mix (uncompressed <code>.wav</code>) and, if you played anything, a <code>.mid</code> file of the notes. Turn on <strong>stems</strong> first to also get separate <code>bed</code> and <code>melody</code> <code>.wav</code> files (pre-reverb, ready for a DAW) — that roughly triples the memory a long take holds, so it's off by default. A take auto-stops and saves at 15 minutes.</p>
+    </div>
   </div>
 </main>
 
