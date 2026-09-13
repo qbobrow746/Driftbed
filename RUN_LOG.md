@@ -23,8 +23,8 @@ Orchestrator: Opus 5 (plans + verifies + commits). Builders: Sonnet 5 agents, on
 | 1 | Recorder hardening (on-demand taps, non-blocking encode, length cap) | done, browser-verified | `6ae4add` |
 | 2 | Presets + shareable permalink (URL hash, localStorage, factory patches) | done, browser-verified | `98ba708` |
 | 3 | Scale + root decoupled from biome | done, browser-verified | `cd44675` |
-| 4 | Audio-reactive visuals (AnalyserNode) | dispatched | — |
-| 5 | Generative auto-melodist | queued | — |
+| 4 | Audio-reactive visuals (AnalyserNode) | done, browser-verified | `28c4692` |
+| 5 | Generative auto-melodist | dispatched | — |
 | 6 | Web MIDI input | queued | — |
 | 7 | Freeze + tape character | queued | — |
 | 8 | Three new biomes (rain/marsh, ocean/tide, void/nebula) | queued | — |
@@ -45,6 +45,12 @@ width control, "song mode" arc across biomes.
   `mobile-web-app-capable` matched `apple-mobile-web-app-capable` as a substring. Fixed by wrapping
   the block in paired `<!-- installable app metadata -->` / `<!-- /... -->` comments. Lesson for
   later units: a "contains" match on an HTML attribute value can collide with a longer name.
+- Canvas/visual verification gotcha: `requestAnimationFrame` is throttled while the Browser pane is
+  hidden, so the canvas reads as all-zero pixels and any promise that waits on rAF never settles
+  (the JS tool then times out at 45s). Front the tab (`tabs_select`) and take a screenshot to force
+  a paint before sampling `getImageData`. Audio keeps running while hidden; only rendering stalls.
+- Useful objective test for visual work: sample mean canvas pixel brightness under two conditions
+  rather than eyeballing screenshots. Unit 4 measured 10.02 (reactivity on) vs 8.27 (off).
 - Verification trap hit during unit 2: assigning `location.href` to a URL whose path matches the
   current page only changes the hash — no reload, so boot never re-runs and a "restored" state is
   really just the state already on screen. Force a real boot (`location.hash = ...` then
