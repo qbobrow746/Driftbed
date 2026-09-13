@@ -510,6 +510,7 @@
         <div class="popover-title">MIDI input</div>
         <button class="seg-btn" id="midiToggleBtn" aria-pressed="false">Enable MIDI</button>
         <p class="popover-hint" id="midiStatus" aria-live="polite">Not connected.</p>
+        <p class="popover-hint" id="midiActivity"></p>
         <p class="popover-hint">Every key plays in the current scale — middle C is the tonic, and it spans octaves as you play up or down. Sustain pedal and mod wheel work if your controller sends them.</p>
       </div>
       <button class="side-tab" id="presetsTab" aria-expanded="false" aria-controls="presetsPopover">presets</button>
@@ -1271,6 +1272,30 @@
     masterGain.gain.linearRampToValueAtTime(Math.max(0,target), now + (glide||2.5));
   }
 
+  // masterGain doubles as the global mute and sits near zero until Play ramps it up, which
+  // meant a note you played with the bed stopped — pad, computer key, or MIDI — was generated
+  // correctly and then multiplied by 0.0001, i.e. silent. You should be able to just play the
+  // thing without starting the ambient bed, so opening the master is tied to played notes too.
+  let playedNoteMuteTimer = null;
+  function anyPlayedNoteSounding(){
+    return Object.keys(activeMelodyNotes).length > 0 || Object.keys(activeMidiNotes).length > 0;
+  }
+  function openMasterForPlayedNote(){
+    if(!ctx || state.playing) return;
+    if(playedNoteMuteTimer){ clearTimeout(playedNoteMuteTimer); playedNoteMuteTimer = null; }
+    setPresence(state.presence, 0.12);
+  }
+  function closeMasterAfterPlayedNote(){
+    if(!ctx || state.playing) return;
+    if(playedNoteMuteTimer) clearTimeout(playedNoteMuteTimer);
+    // The note's own release tail runs ~3.5s; mute only once it has decayed and nothing
+    // else is still held, so repeated playing never chops itself off.
+    playedNoteMuteTimer = setTimeout(()=>{
+      playedNoteMuteTimer = null;
+      if(!state.playing && !anyPlayedNoteSounding()) setPresence(0, 1.2);
+    }, 4200);
+  }
+
   function spawnChordVoices(biome, key, chord, fadeInSecs, destBus){
     const now = ctx.currentTime;
     const chordDeg = chord.deg;
@@ -1893,6 +1918,7 @@
     initAudio();
     if(ctx.state==='suspended') ctx.resume();
     padHoldStart(i);
+    openMasterForPlayedNote();
     if(activeMelodyNotes[i]) return;
     const { chord, key } = currentChord();
     const baseDeg = degreeForPad(i, chord);
@@ -2023,6 +2049,7 @@
     if(padHoldCount[i] > 0) return;
     const v = activeMelodyNotes[i];
     if(!v) return;
+    closeMasterAfterPlayedNote();
     if(v.arp){
       removeArpNote(i);
       delete activeMelodyNotes[i];
@@ -2129,6 +2156,7 @@
     if(ctx.state==='suspended') ctx.resume();
     if(activeMidiNotes[note]) stopMidiNoteVoices(note, 0.04); // fast retrigger, no long tail
     midiSustainedOff.delete(note);
+    openMasterForPlayedNote();
 
     const key = currentKey();
     const degree = midiNoteToDegree(note);
@@ -2175,6 +2203,7 @@
     v.oscs.forEach(o=>{ try{ o.stop(t+dur+0.05); }catch(e){} });
     if(v.midiNotes) v.midiNotes.forEach(n=>logMidiEvent(n, 'off'));
     delete activeMidiNotes[note];
+    closeMasterAfterPlayedNote();
   }
   // Note-off (or velocity-0 note-on) arrives here. With the sustain pedal down we
   // keep the voice sounding and just remember to release it once the pedal lifts;
@@ -3585,10 +3614,24 @@
     updateMidiStatusUI();
     persist();
   }
+  function showMidiActivity(cmd, data){
+    const el = document.getElementById('midiActivity');
+    if(!el) return;
+    const ch = (data[0] & 0x0F) + 1;
+    let text;
+    if(cmd===0x90 && (data[2]||0)>0) text = `note ${data[1]} on · vel ${data[2]} · ch ${ch}`;
+    else if(cmd===0x90 || cmd===0x80) text = `note ${data[1]} off · ch ${ch}`;
+    else if(cmd===0xB0) text = `cc ${data[1]} = ${data[2]||0} · ch ${ch}`;
+    else text = `0x${cmd.toString(16)} · ch ${ch}`;
+    el.textContent = 'receiving: ' + text;
+  }
   function handleMidiMessage(e){
     const data = e.data;
     if(!data || data.length<2) return;
     const cmd = data[0] & 0xF0; // channel (low nibble) is ignored — respond on all channels
+    // Echo what arrived, so "nothing happens" can be told apart from "nothing is arriving":
+    // if this line stays blank while you play, the messages aren't reaching the page at all.
+    showMidiActivity(cmd, data);
     if(cmd===0x90){ // note on (velocity 0 is a note-off per the MIDI spec)
       const vel = data[2]||0;
       if(vel>0) startMidiNote(data[1], vel); else releaseMidiNote(data[1]);
