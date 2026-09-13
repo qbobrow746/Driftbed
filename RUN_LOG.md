@@ -29,7 +29,11 @@ Orchestrator: Opus 5 (plans + verifies + commits). Builders: Sonnet 5 agents, on
 | 7 | Freeze + tape character | done, browser-verified | `65a6f5a` |
 | 8 | Three new biomes (rain/marsh, ocean/tide, void/nebula) | done, browser-verified | `90211fe` |
 | 9 | Seamless loop export for game use | done, verified (unit-tested + live capture) | `8fe9229` |
-| 10 | Mobile + a11y polish pass + README | dispatched | — |
+| 10 | Mobile + a11y polish pass + README | done, browser-verified | `6ba5744` |
+
+**Run complete.** All 10 units plus both prerequisites landed and are committed. `pwa/index.html`
+went from 2,174 to 3,993 lines. Nothing was deployed — the live GitHub Pages site and the published
+Artifact are untouched, and shipping is the user's call.
 
 Stretch if time remains: granular texture layer, pad-ducks-under-melody sidechain, stereo
 width control, "song mode" arc across biomes.
