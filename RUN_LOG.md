@@ -20,8 +20,8 @@ Orchestrator: Opus 5 (plans + verifies + commits). Builders: Sonnet 5 agents, on
 |---|------|-------|--------|
 | P1 | git baseline + .gitignore | done | `71fb96b` |
 | P2 | tools/build-standalone.mjs, tools/check.mjs, AGENT_NOTES.md | done, adversarially verified | `b724a81` |
-| 1 | Recorder hardening (on-demand taps, non-blocking encode, length cap) | dispatched | — |
-| 2 | Presets + shareable permalink (URL hash, localStorage, factory patches) | queued | — |
+| 1 | Recorder hardening (on-demand taps, non-blocking encode, length cap) | done, browser-verified | `6ae4add` |
+| 2 | Presets + shareable permalink (URL hash, localStorage, factory patches) | dispatched | — |
 | 3 | Scale + root decoupled from biome | queued | — |
 | 4 | Audio-reactive visuals (AnalyserNode) | queued | — |
 | 5 | Generative auto-melodist | queued | — |
@@ -45,6 +45,15 @@ width control, "song mode" arc across biomes.
   `mobile-web-app-capable` matched `apple-mobile-web-app-capable` as a substring. Fixed by wrapping
   the block in paired `<!-- installable app metadata -->` / `<!-- /... -->` comments. Lesson for
   later units: a "contains" match on an HTML attribute value can collide with a longer name.
+- Browser verification recipe that worked well for unit 1, reuse it: serve with
+  `cd pwa && python3 -m http.server 8743`, open `http://localhost:8743/index.html`, then drive the
+  app by `document.getElementById('...').click()` from the JS console tool. To prove a node isn't
+  being created, monkey-patch the constructor before acting (e.g. wrapping
+  `AudioContext.prototype.createScriptProcessor` with a counter) — closure-private variables can't
+  be read from outside, but constructor calls can be counted.
+- The page always logs one console error in the browser pane: the service worker failing to fetch
+  (`An unknown error occurred when fetching the script`). It is caught by the app's own `.catch()`,
+  is sandbox-specific, and predates this run — not a regression, don't chase it.
 - Harness is adversarially verified: deliberately introducing a syntax error, a `getElementById`
   pointing at a nonexistent id, a duplicate id, and a stale standalone each produce a non-zero exit.
   So a green `check.mjs` is meaningful, but it proves nothing about audio behavior — that needs the

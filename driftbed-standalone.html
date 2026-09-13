@@ -237,6 +237,27 @@
     .popover{ position:fixed; left:50%; top:auto; bottom:1.5rem; margin-left:0; transform:translateX(-50%); width:min(16rem,88vw); }
   }
 
+  /* presets popover */
+  .popover input[type="text"]{
+    width:100%; background:rgba(255,255,255,.03); color:var(--ink);
+    border:1px solid var(--panel-border); border-radius:8px;
+    font-family:'Manrope'; font-size:.72rem; padding:.3rem .4rem;
+  }
+  .popover input[type="text"]:focus-visible{ outline:2px solid var(--focus); }
+  #linkFallbackInput{ font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:.62rem; }
+  .preset-save-row{ display:flex; flex-direction:column; gap:.35rem; }
+  .preset-row{ display:flex; align-items:center; gap:.3rem; }
+  .preset-row .preset-btn{ text-align:left; }
+  .preset-del{
+    border:1px solid var(--panel-border); background:rgba(255,255,255,.03);
+    color:var(--ink-dim); border-radius:999px; width:1.35rem; height:1.35rem;
+    display:flex; align-items:center; justify-content:center; flex:0 0 auto;
+    font-size:.72rem; line-height:1; cursor:pointer; padding:0;
+  }
+  .preset-del:hover{ color:#e2685f; border-color:color-mix(in srgb, #e2685f 55%, transparent); }
+  .preset-del:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
+  .seg-btn.factory{ border-style:dashed; }
+
   .seg{ display:flex; gap:.3rem; }
   .seg-btn{
     border:1px solid var(--panel-border); background:rgba(255,255,255,.03);
@@ -418,6 +439,27 @@
         </select>
         <input type="range" class="range" id="blendAmount" min="0" max="100" value="0" aria-label="Blend amount" />
         <div class="fader-ends"><span>none</span><span>even mix</span></div>
+      </div>
+      <button class="side-tab" id="presetsTab" aria-expanded="false" aria-controls="presetsPopover">presets</button>
+      <div class="popover" id="presetsPopover" hidden>
+        <div class="popover-title">Presets</div>
+
+        <div class="popover-title" style="margin-top:.2rem;">Factory</div>
+        <div class="seg" id="factoryPresetList" role="group" aria-label="Factory presets"></div>
+
+        <div class="popover-title" style="margin-top:.2rem;">Yours</div>
+        <div class="seg" id="userPresetList" role="group" aria-label="Your saved presets"></div>
+        <p class="popover-hint" id="noUserPresetsHint">No saved presets yet.</p>
+
+        <div class="preset-save-row">
+          <input type="text" id="presetNameInput" placeholder="Name this sound" aria-label="Name for a new preset" maxlength="60" />
+          <button class="seg-btn" id="savePresetBtn" aria-label="Save the current sound as a preset">save preset</button>
+        </div>
+
+        <div class="popover-title" style="margin-top:.2rem;">Share</div>
+        <button class="seg-btn" id="copyLinkBtn" aria-label="Copy a link to the current sound">copy link</button>
+        <input type="text" id="linkFallbackInput" readonly hidden aria-label="Permalink — select and copy manually" />
+        <p class="popover-hint" id="copyLinkStatus" aria-live="polite"></p>
       </div>
     </div>
 
@@ -661,10 +703,29 @@
     playing:false
   };
 
-  try{
-    const saved = JSON.parse(localStorage.getItem('driftbed-state')||'null');
-    if(saved) Object.assign(state, saved, {playing:false});
-  }catch(e){}
+  // snapshot of the built-in defaults, taken before anything is restored into `state` —
+  // sanitizeState() (defined below, in the presets/sharing section) falls back to these
+  // for any field a saved/shared payload is missing or gets wrong.
+  const STATE_DEFAULTS = JSON.parse(JSON.stringify(state));
+
+  // A permalink hash wins over localStorage if present and well-formed; either way,
+  // playback never auto-starts — `playing` is always forced false here, same as before.
+  (function restoreInitialState(){
+    try{
+      const fromHash = readPermalinkFromHash();
+      if(fromHash){
+        Object.assign(state, fromHash.state, {playing:false});
+        if(fromHash.chordEdits) applyChordEditsToBiomes(fromHash.chordEdits);
+        try{ history.replaceState(null, '', location.pathname + location.search); }catch(e){}
+        persist();
+        return;
+      }
+    }catch(e){ /* malformed link — fall through to localStorage rather than break the app */ }
+    try{
+      const saved = JSON.parse(localStorage.getItem('driftbed-state')||'null');
+      if(saved) Object.assign(state, sanitizeState(saved), {playing:false});
+    }catch(e){}
+  })();
 
   function persist(){
     try{ localStorage.setItem('driftbed-state', JSON.stringify(state)); }catch(e){}
@@ -1929,9 +1990,186 @@
     recordState = 'idle';
   }
 
+  // ---------- presets & sharing: permalinks, named user presets, factory presets ----------
+  // Captures/restores everything in `state` plus the BIOMES chord edits (root degree + 7th
+  // toggle per chord, per biome) — the chord editor mutates BIOMES in place and those edits
+  // are otherwise session-only, so a saved/shared sound has to carry them separately.
+
+  function base64UrlEncode(str){
+    const bytes = new TextEncoder().encode(str);
+    let bin = '';
+    bytes.forEach(b=>{ bin += String.fromCharCode(b); });
+    return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+  function base64UrlDecode(str){
+    let b64 = str.replace(/-/g,'+').replace(/_/g,'/');
+    while(b64.length % 4) b64 += '=';
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+
+  function clampNum(v, lo, hi, fallback){
+    const n = Number(v);
+    if(!Number.isFinite(n)) return fallback;
+    return Math.min(hi, Math.max(lo, n));
+  }
+  // Validates an arbitrary (possibly hand-crafted or corrupted) object into a complete,
+  // safe `state`-shaped object — used for localStorage, permalinks, and presets alike so
+  // none of those sources can hand the app a value that breaks a control or throws.
+  function sanitizeState(input){
+    const d = STATE_DEFAULTS;
+    if(!input || typeof input !== 'object') input = {};
+    const out = {};
+    out.biome = (typeof input.biome==='string' && BIOMES[input.biome]) ? input.biome : d.biome;
+    out.presence = Math.round(clampNum(input.presence, 0, 100, d.presence));
+    out.density = Math.round(clampNum(input.density, 0, 100, d.density));
+    out.air = Math.round(clampNum(input.air, 0, 100, d.air));
+    out.warmth = Math.round(clampNum(input.warmth, 0, 100, d.warmth));
+    out.intensity = Math.round(clampNum(input.intensity, 0, 100, d.intensity));
+    out.transpose = Math.round(clampNum(input.transpose, -12, 12, d.transpose));
+    out.autofade = ['0','120','300','600','1200','1800'].includes(String(input.autofade)) ? String(input.autofade) : d.autofade;
+    out.accentsOn = typeof input.accentsOn==='boolean' ? input.accentsOn : d.accentsOn;
+    out.windOn = typeof input.windOn==='boolean' ? input.windOn : d.windOn;
+    out.echoOn = typeof input.echoOn==='boolean' ? input.echoOn : d.echoOn;
+    out.colorDriftOn = typeof input.colorDriftOn==='boolean' ? input.colorDriftOn : d.colorDriftOn;
+    out.melodyMode = ['notes','arp','chord'].includes(input.melodyMode) ? input.melodyMode : d.melodyMode;
+    out.voice = ['soft','warm','glass','pad','sub'].includes(input.voice) ? input.voice : d.voice;
+    out.arpRate = ['slow','med','fast'].includes(input.arpRate) ? input.arpRate : d.arpRate;
+    out.arpPattern = ['up','down','updown','random'].includes(input.arpPattern) ? input.arpPattern : d.arpPattern;
+    out.blendBiome = (input.blendBiome==='' || BIOMES[input.blendBiome]) ? input.blendBiome : '';
+    out.blendAmount = Math.round(clampNum(input.blendAmount, 0, 100, d.blendAmount));
+    out.autoBreathe = typeof input.autoBreathe==='boolean' ? input.autoBreathe : d.autoBreathe;
+    out.chordSevenths = (Array.isArray(input.chordSevenths) && input.chordSevenths.length===5)
+      ? input.chordSevenths.map(v=>!!v)
+      : d.chordSevenths.slice();
+    out.stemsOn = typeof input.stemsOn==='boolean' ? input.stemsOn : d.stemsOn;
+    out.playing = false;
+    return out;
+  }
+  // Validates a { biomeName: [{deg,seventh}, ...] } chord-edit payload against the live
+  // BIOMES table — a biome missing, or with the wrong number of chords, is dropped rather
+  // than partially applied.
+  function sanitizeChordEdits(input){
+    if(!input || typeof input !== 'object') return null;
+    const out = {};
+    let any = false;
+    Object.keys(BIOMES).forEach(name=>{
+      const biome = BIOMES[name];
+      const arr = input[name];
+      if(!Array.isArray(arr) || arr.length!==biome.chords.length) return;
+      const n = biome.scale.length;
+      out[name] = arr.map(c=>{
+        const deg = Math.round(Number(c && c.deg));
+        return { deg: Number.isFinite(deg) ? ((deg%n)+n)%n : 0, seventh: !!(c && c.seventh) };
+      });
+      any = true;
+    });
+    return any ? out : null;
+  }
+  function applyChordEditsToBiomes(edits){
+    if(!edits) return;
+    Object.keys(edits).forEach(name=>{
+      const biome = BIOMES[name];
+      if(!biome) return;
+      edits[name].forEach((c,i)=>{
+        if(biome.chords[i]){ biome.chords[i].deg = c.deg; biome.chords[i].seventh = c.seventh; }
+      });
+    });
+  }
+  function captureChordEdits(){
+    const out = {};
+    Object.keys(BIOMES).forEach(name=>{
+      out[name] = BIOMES[name].chords.map(c=>({ deg:c.deg, seventh:!!c.seventh }));
+    });
+    return out;
+  }
+
+  function buildPermalink(){
+    const payload = { v:1, state: sanitizeState(state), chordEdits: captureChordEdits() };
+    const encoded = base64UrlEncode(JSON.stringify(payload));
+    const url = new URL(location.href);
+    url.hash = encoded;
+    return url.toString();
+  }
+  // Reads+validates the URL hash. Any failure (bad base64, bad JSON, wrong shape) is
+  // swallowed and reported as "nothing here" — a malformed link must never break the app.
+  function readPermalinkFromHash(){
+    const hash = location.hash ? location.hash.slice(1) : '';
+    if(!hash) return null;
+    try{
+      const payload = JSON.parse(base64UrlDecode(hash));
+      if(!payload || typeof payload !== 'object') return null;
+      return { state: sanitizeState(payload.state), chordEdits: sanitizeChordEdits(payload.chordEdits) };
+    }catch(e){
+      return null;
+    }
+  }
+
+  // ---- named user presets (localStorage, kept separate from driftbed-state so a corrupt
+  // or cleared preset list can never take the live sound down with it) ----
+  const PRESETS_KEY = 'driftbed-presets';
+  function loadUserPresets(){
+    try{
+      const arr = JSON.parse(localStorage.getItem(PRESETS_KEY)||'[]');
+      return Array.isArray(arr) ? arr : [];
+    }catch(e){ return []; }
+  }
+  function saveUserPresets(list){
+    try{ localStorage.setItem(PRESETS_KEY, JSON.stringify(list)); }
+    catch(e){ /* quota exceeded or storage unavailable — the save silently no-ops */ }
+  }
+  function addUserPreset(name){
+    const list = loadUserPresets();
+    list.push({
+      id: 'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,7),
+      name: String(name).slice(0,60),
+      state: sanitizeState(state),
+      chordEdits: captureChordEdits()
+    });
+    saveUserPresets(list);
+  }
+  function deleteUserPreset(id){
+    saveUserPresets(loadUserPresets().filter(p=>p.id!==id));
+  }
+
+  // ---- factory presets: built-in, not stored in localStorage ----
+  const FACTORY_PRESETS = [
+    { id:'factory-ember-hollow', name:'Ember Hollow', factory:true, state:{ biome:'desert', presence:45, density:55, air:25, warmth:70, intensity:65, transpose:-2, autofade:'0', accentsOn:true, windOn:true, echoOn:true, colorDriftOn:false, melodyMode:'chord', voice:'warm', arpRate:'med', arpPattern:'up', blendBiome:'cave', blendAmount:35, autoBreathe:false, chordSevenths:[true,true,true,true,true], stemsOn:false } },
+    { id:'factory-dune-whisper', name:'Dune Whisper', factory:true, state:{ biome:'desert', presence:20, density:8, air:35, warmth:45, intensity:12, transpose:0, autofade:'0', accentsOn:true, windOn:true, echoOn:false, colorDriftOn:true, melodyMode:'notes', voice:'soft', arpRate:'med', arpPattern:'up', blendBiome:'', blendAmount:0, autoBreathe:true, chordSevenths:[true,true,true,true,true], stemsOn:false } },
+    { id:'factory-glass-drift', name:'Glass Drift', factory:true, state:{ biome:'snow', presence:40, density:15, air:80, warmth:15, intensity:35, transpose:0, autofade:'0', accentsOn:true, windOn:true, echoOn:true, colorDriftOn:true, melodyMode:'arp', voice:'glass', arpRate:'fast', arpPattern:'updown', blendBiome:'', blendAmount:0, autoBreathe:false, chordSevenths:[true,true,true,true,true], stemsOn:false } },
+    { id:'factory-fernlight', name:'Fernlight', factory:true, state:{ biome:'oak', presence:38, density:35, air:50, warmth:55, intensity:45, transpose:0, autofade:'0', accentsOn:true, windOn:false, echoOn:true, colorDriftOn:true, melodyMode:'notes', voice:'soft', arpRate:'med', arpPattern:'up', blendBiome:'', blendAmount:0, autoBreathe:true, chordSevenths:[true,true,true,true,true], stemsOn:false } },
+    { id:'factory-stone-hush', name:'Stone Hush', factory:true, state:{ biome:'cave', presence:30, density:10, air:15, warmth:75, intensity:15, transpose:-5, autofade:'0', accentsOn:false, windOn:true, echoOn:true, colorDriftOn:false, melodyMode:'arp', voice:'sub', arpRate:'slow', arpPattern:'down', blendBiome:'', blendAmount:0, autoBreathe:false, chordSevenths:[true,true,true,true,true], stemsOn:false } },
+    { id:'factory-skyfall-bloom', name:'Skyfall Bloom', factory:true, state:{ biome:'aurora', presence:55, density:70, air:65, warmth:30, intensity:70, transpose:3, autofade:'0', accentsOn:true, windOn:true, echoOn:true, colorDriftOn:true, melodyMode:'chord', voice:'pad', arpRate:'med', arpPattern:'up', blendBiome:'snow', blendAmount:25, autoBreathe:false, chordSevenths:[true,true,true,true,true], stemsOn:false } }
+  ];
+
+  // Loads a preset/permalink's sound into the live app. Biome changes go through
+  // switchBiome() so the usual crossfade happens; whether the instrument is currently
+  // playing is left exactly as it was (only the initial boot restore forces `playing`
+  // false — see restoreInitialState() above).
+  function loadSound(data){
+    if(!data || typeof data !== 'object') return;
+    const incoming = sanitizeState(data.state);
+    const chordEdits = sanitizeChordEdits(data.chordEdits);
+    if(chordEdits) applyChordEditsToBiomes(chordEdits);
+
+    const wasPlaying = state.playing;
+    if(incoming.biome !== state.biome) switchBiome(incoming.biome);
+
+    const blendChanged = incoming.blendBiome !== state.blendBiome;
+    if(blendChanged) stopBlend();
+
+    Object.assign(state, incoming, { biome: state.biome, playing: wasPlaying });
+
+    if(blendChanged && wasPlaying && state.blendBiome) startBlend();
+
+    applyStateToUI();
+    persist();
+  }
+
   // ---------- UI wiring ----------
   document.querySelectorAll('.totem').forEach(btn=>{
-    btn.classList.toggle('active', btn.dataset.biome===state.biome);
     btn.addEventListener('click', ()=> switchBiome(btn.dataset.biome));
   });
 
@@ -1941,8 +2179,6 @@
 
   const presenceInput = document.getElementById('presence');
   const presenceValue = document.getElementById('presenceValue');
-  presenceInput.value = state.presence;
-  presenceValue.textContent = state.presence + '%';
   presenceInput.addEventListener('input', (e)=>{
     state.presence = Number(e.target.value);
     presenceValue.textContent = state.presence + '%';
@@ -1953,8 +2189,6 @@
 
   const intensityInput = document.getElementById('intensity');
   const intensityValue = document.getElementById('intensityValue');
-  intensityInput.value = state.intensity;
-  intensityValue.textContent = state.intensity;
   intensityInput.addEventListener('input', (e)=>{
     state.intensity = Number(e.target.value);
     intensityValue.textContent = state.intensity;
@@ -1967,8 +2201,6 @@
   function wireDial(id, applyFn){
     const input = document.getElementById(id);
     const out = document.getElementById(id+'Value');
-    input.value = state[id];
-    out.textContent = (id==='transpose') ? formatKey(state[id]) : state[id];
     input.addEventListener('input', (e)=>{
       state[id] = Number(e.target.value);
       out.textContent = (id==='transpose') ? formatKey(state[id]) : state[id];
@@ -1998,7 +2230,6 @@
   document.getElementById('recordBtn').addEventListener('click', toggleRecord);
 
   const autofadeSelect = document.getElementById('autofade');
-  autofadeSelect.value = state.autofade;
   autofadeSelect.addEventListener('change', ()=>{
     state.autofade = autofadeSelect.value;
     persist();
@@ -2015,8 +2246,6 @@
 
   function wireChip(id, key, onChange){
     const btn = document.getElementById(id);
-    btn.classList.toggle('on', state[key]);
-    btn.setAttribute('aria-pressed', String(state[key]));
     btn.addEventListener('click', ()=>{
       state[key] = !state[key];
       btn.classList.toggle('on', state[key]);
@@ -2031,7 +2260,6 @@
   wireChip('chipDrift', 'colorDriftOn', ()=>{});
   wireChip('chipBreathe', 'autoBreathe', ()=>applyAutoBreathe(state.autoBreathe));
   wireChip('chipStems', 'stemsOn', ()=>{});
-  applyAutoBreathe(state.autoBreathe);
 
   const SEG_KEY_MAP = { mode:'melodyMode', voice:'voice', rate:'arpRate', pattern:'arpPattern' };
   function segDatasetKey(btn){
@@ -2057,11 +2285,8 @@
     arpSection.hidden = state.melodyMode!=='arp';
     chordSeventhsRow.hidden = state.melodyMode!=='chord';
   });
-  chordSeventhsRow.hidden = state.melodyMode!=='chord';
   document.querySelectorAll('.pad-seventh').forEach(btn=>{
     const idx = Number(btn.dataset.idx);
-    btn.classList.toggle('on', state.chordSevenths[idx]);
-    btn.setAttribute('aria-pressed', String(state.chordSevenths[idx]));
     btn.addEventListener('click', (e)=>{
       e.stopPropagation();
       state.chordSevenths[idx] = !state.chordSevenths[idx];
@@ -2074,14 +2299,6 @@
   wireSegGroup('.seg-btn[data-voice]', ()=>{});
   wireSegGroup('.seg-btn[data-rate]', restartArpInterval);
   wireSegGroup('.seg-btn[data-pattern]', ()=>{ arpStepIndex = 0; });
-  document.querySelectorAll('.seg-btn').forEach(btn=>{
-    const dk = segDatasetKey(btn);
-    const key = SEG_KEY_MAP[dk];
-    const active = state[key]===btn.dataset[dk];
-    btn.classList.toggle('on', active);
-    btn.setAttribute('aria-checked', String(active));
-  });
-  arpSection.hidden = state.melodyMode!=='arp';
 
   function closePopovers(){
     document.querySelectorAll('.popover').forEach(p=>p.setAttribute('hidden',''));
@@ -2105,13 +2322,11 @@
   wirePopoverTab('toneTab','tonePopover');
   wirePopoverTab('chordsTab','chordsPopover');
   wirePopoverTab('blendTab','blendPopover');
+  wirePopoverTab('presetsTab','presetsPopover');
   document.addEventListener('click', closePopovers);
-  updateChordEditor();
 
   const blendBiomeSelect = document.getElementById('blendBiomeSelect');
   const blendAmountInput = document.getElementById('blendAmount');
-  blendBiomeSelect.value = state.blendBiome;
-  blendAmountInput.value = state.blendAmount;
   blendBiomeSelect.addEventListener('change', (e)=>{
     e.stopPropagation();
     stopBlend();
@@ -2135,7 +2350,11 @@
     btn.addEventListener('pointercancel', release);
   });
   const MELODY_KEY_MAP = { a:0, s:1, d:2, f:3, g:4 };
+  function isTypingTarget(el){
+    return !!el && (el.tagName==='INPUT' || el.tagName==='TEXTAREA' || el.isContentEditable);
+  }
   document.addEventListener('keydown', (e)=>{
+    if(isTypingTarget(e.target)) return; // the presets popover has real text fields now — don't play notes while typing a name
     const k = e.key.toLowerCase();
     if(MELODY_KEY_MAP.hasOwnProperty(k) && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey){
       const i = MELODY_KEY_MAP[k];
@@ -2157,15 +2376,177 @@
   });
   document.getElementById('loopBtn').addEventListener('click', toggleLooper);
 
-  (function initReadout(){
+  // ---- presets popover: factory list, user list (save/load/delete), copy-link ----
+  function renderPresetLists(){
+    const factoryWrap = document.getElementById('factoryPresetList');
+    const userWrap = document.getElementById('userPresetList');
+    const noUserHint = document.getElementById('noUserPresetsHint');
+
+    factoryWrap.innerHTML = '';
+    FACTORY_PRESETS.forEach(p=>{
+      const btn = document.createElement('button');
+      btn.className = 'seg-btn preset-btn factory';
+      btn.textContent = p.name;
+      btn.setAttribute('aria-label', 'Load factory preset ' + p.name);
+      btn.addEventListener('click', ()=>{ loadSound(p); closePopovers(); });
+      factoryWrap.appendChild(btn);
+    });
+
+    const userPresets = loadUserPresets();
+    userWrap.innerHTML = '';
+    userPresets.forEach(p=>{
+      const row = document.createElement('div');
+      row.className = 'preset-row';
+      const btn = document.createElement('button');
+      btn.className = 'seg-btn preset-btn';
+      btn.textContent = p.name;
+      btn.setAttribute('aria-label', 'Load your preset ' + p.name);
+      btn.addEventListener('click', ()=>{ loadSound(p); closePopovers(); });
+      const del = document.createElement('button');
+      del.className = 'preset-del';
+      del.textContent = '×';
+      del.setAttribute('aria-label', 'Delete preset ' + p.name);
+      del.addEventListener('click', ()=>{
+        deleteUserPreset(p.id);
+        renderPresetLists();
+      });
+      row.appendChild(btn);
+      row.appendChild(del);
+      userWrap.appendChild(row);
+    });
+    noUserHint.hidden = userPresets.length>0;
+  }
+  renderPresetLists();
+
+  const presetNameInput = document.getElementById('presetNameInput');
+  function saveCurrentPreset(){
+    const name = presetNameInput.value.trim();
+    if(!name){ presetNameInput.focus(); return; }
+    addUserPreset(name);
+    presetNameInput.value = '';
+    renderPresetLists();
+  }
+  document.getElementById('savePresetBtn').addEventListener('click', saveCurrentPreset);
+  presetNameInput.addEventListener('keydown', (e)=>{
+    if(e.key==='Enter'){ e.preventDefault(); saveCurrentPreset(); }
+  });
+
+  const linkFallbackInput = document.getElementById('linkFallbackInput');
+  const copyLinkStatus = document.getElementById('copyLinkStatus');
+  document.getElementById('copyLinkBtn').addEventListener('click', async ()=>{
+    const link = buildPermalink();
+    let copied = false;
+    try{
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        await navigator.clipboard.writeText(link);
+        copied = true;
+      }
+    }catch(e){ copied = false; }
+    if(copied){
+      linkFallbackInput.hidden = true;
+      copyLinkStatus.textContent = 'copied';
+      setTimeout(()=>{ if(copyLinkStatus.textContent==='copied') copyLinkStatus.textContent=''; }, 2500);
+    } else {
+      // Clipboard API missing or it rejected (e.g. the standalone file opened over
+      // file://, which isn't a secure context) — fall back to a selectable field.
+      linkFallbackInput.hidden = false;
+      linkFallbackInput.value = link;
+      linkFallbackInput.focus();
+      linkFallbackInput.select();
+      copyLinkStatus.textContent = 'copy manually below';
+    }
+  });
+
+  // ---- push the (possibly hash- or localStorage-restored) state into every control and
+  // into the audio graph, if it already exists. See the presets & sharing section above
+  // for sanitizeState()/sanitizeChordEdits(), which already ran on anything restored.
+  function syncSegGroup(dataAttr, stateKey){
+    document.querySelectorAll('.seg-btn[data-'+dataAttr+']').forEach(btn=>{
+      const active = state[stateKey] === btn.dataset[dataAttr];
+      btn.classList.toggle('on', active);
+      btn.setAttribute('aria-checked', String(active));
+    });
+  }
+  function syncChip(id, key){
+    const btn = document.getElementById(id);
+    if(!btn) return;
+    btn.classList.toggle('on', !!state[key]);
+    btn.setAttribute('aria-pressed', String(!!state[key]));
+  }
+  function applyStateToUI(){
     const biome = BIOMES[state.biome];
-    document.getElementById('scaleReadout').textContent = biome.label;
-    document.getElementById('modeReadout').textContent = biome.mode;
-    document.documentElement.style.setProperty('--accent', biome.accent);
-    document.documentElement.style.setProperty('--deep', biome.deep);
-    document.documentElement.style.setProperty('--biome-deep', biome.deep);
+    if(biome){
+      document.querySelectorAll('.totem').forEach(b=>b.classList.toggle('active', b.dataset.biome===state.biome));
+      document.getElementById('scaleReadout').textContent = biome.label;
+      document.getElementById('modeReadout').textContent = biome.mode;
+      document.documentElement.style.setProperty('--accent', biome.accent);
+      document.documentElement.style.setProperty('--deep', biome.deep);
+      document.documentElement.style.setProperty('--biome-deep', biome.deep);
+      targetAccent = hexToRgb(biome.accent);
+      targetDeep = hexToRgb(biome.deep);
+      currentMotion = biome.motion;
+      currentMoteCount = biome.moteCount;
+      currentAlphaScale = biome.alphaScale;
+      baseAccentRgb = hexToRgb(biome.accent);
+      driftAccentRgb = hexToRgb(biome.driftColor);
+      currentDriftSpeed = biome.driftSpeed;
+    }
+
+    presenceInput.value = state.presence;
+    presenceValue.textContent = state.presence + '%';
+    intensityInput.value = state.intensity;
+    intensityValue.textContent = state.intensity;
+
+    setControl('density', state.density);
+    setControl('air', state.air);
+    setControl('warmth', state.warmth);
+    setControl('transpose', state.transpose);
+
+    syncSegGroup('mode', 'melodyMode');
+    syncSegGroup('voice', 'voice');
+    syncSegGroup('rate', 'arpRate');
+    syncSegGroup('pattern', 'arpPattern');
+    arpSection.hidden = state.melodyMode!=='arp';
+    chordSeventhsRow.hidden = state.melodyMode!=='chord';
+
+    syncChip('chipAccents','accentsOn');
+    syncChip('chipWind','windOn');
+    syncChip('chipEcho','echoOn');
+    syncChip('chipDrift','colorDriftOn');
+    syncChip('chipBreathe','autoBreathe');
+    syncChip('chipStems','stemsOn');
+
+    document.querySelectorAll('.pad-seventh').forEach(btn=>{
+      const idx = Number(btn.dataset.idx);
+      const on = !!state.chordSevenths[idx];
+      btn.classList.toggle('on', on);
+      btn.setAttribute('aria-pressed', String(on));
+    });
+
+    blendBiomeSelect.value = state.blendBiome;
+    blendAmountInput.value = state.blendAmount;
+    autofadeSelect.value = state.autofade;
+
+    // rebuilds #chordSlots from the (possibly just-restored) BIOMES chord edits, and
+    // relabels the melody pads/chord readout to match
     updateMelodyPads();
-  })();
+    updateChordEditor();
+
+    if(ctx){
+      applyAir(state.air);
+      applyWarmth(state.warmth);
+      applyTranspose(state.transpose);
+      updateNoiseLevel(state.intensity);
+      applyBlendAmount(state.blendAmount);
+      if(biome) applyBiomeEcho(biome); // echoOn may have changed even if the biome didn't
+      if(state.playing) setPresence(state.presence, 2.5);
+    }
+    if(!state.playing) visualPresenceTarget = state.presence/100;
+    // safe with or without ctx — it only drives the presence slider/visual, same as its
+    // original unconditional call site did
+    applyAutoBreathe(state.autoBreathe);
+  }
+  applyStateToUI();
 
   // ---------- ambient field (canvas) ----------
   const field = document.getElementById('field');
