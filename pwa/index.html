@@ -945,7 +945,7 @@
   function formatKey(v){ return (v>0?'+':'') + v + ' st'; }
 
   // ---------- audio engine ----------
-  let ctx=null, masterGain, brightness, dryGain, wetGain, convolver, voiceBus, bedBus, melodyBus;
+  let ctx=null, masterGain, limiter, brightness, dryGain, wetGain, convolver, voiceBus, bedBus, melodyBus;
   // "Tape" character: built once in initAudio() and left permanently inline; toggling only
   // ramps tapeDryGain/tapeWetGain (see applyTapeOn()) so the live graph is never rewired.
   let preMaster, tapeDryGain, tapeWetGain, tapeShaper, tapeWowDelay, tapeHissSource, tapeHissFilter;
@@ -990,7 +990,12 @@
   // chordDur or firing immediately. See setFreeze()/reconcileFreezeTimer() below.
   let chordTimerFireAt = null, freezeRemainingMs = null;
   let activeVoices = [];
-  const MAX_GAIN = 0.42;
+  // Ceiling the Presence slider scales toward. The old 0.42 left the whole instrument very
+  // quiet in absolute terms — a single played note landed around -37dBFS at default Presence,
+  // which is fine under a dense pad bed but far too quiet when you are just playing it. Raised
+  // here and on the played-note gains below; the limiter before the destination is what makes
+  // that safe, since the pad + blend + melody worst case can now exceed unity before it.
+  const MAX_GAIN = 0.75;
 
   function colorNoiseInPlace(data, tone){
     if(tone==='bright'){
@@ -1132,7 +1137,20 @@
 
     tapeWetGain.connect(masterGain);
 
-    masterGain.connect(ctx.destination);
+    // Safety limiter on the way out. A dense moment — full pad chord plus a blended second
+    // biome plus held melody notes, all through the reverb — can sum past unity now that the
+    // levels above are no longer so conservative, and Web Audio hard-clips at the destination.
+    // A high threshold with a steep ratio leaves ordinary playing untouched and only catches
+    // those peaks. Everything downstream (recorder tap, analyser) hangs off this rather than
+    // masterGain, so what you record and what the visuals react to is what you actually hear.
+    limiter = ctx.createDynamicsCompressor();
+    limiter.threshold.value = -3;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.25;
+    masterGain.connect(limiter);
+    limiter.connect(ctx.destination);
 
     // Visual analyser tap — a side branch off masterGain, not inserted inline in the signal
     // path. It is never connected onward (not to ctx.destination or anything else), so it
@@ -1148,7 +1166,7 @@
     analyser = ctx.createAnalyser();
     analyser.fftSize = 512;
     analyser.smoothingTimeConstant = 0.85;
-    masterGain.connect(analyser);
+    limiter.connect(analyser);
     analyserTimeData = new Uint8Array(analyser.fftSize);
     analyserFreqData = new Uint8Array(analyser.frequencyBinCount);
 
@@ -1949,7 +1967,7 @@
     const isChord = state.melodyMode==='chord';
     const offsets = isChord ? (state.chordSevenths[i] ? [0,2,4,6] : [0,2,4]) : [0];
     const octave = isChord ? 3 : 4;
-    const perNoteGain = isChord ? 0.045 : 0.075;
+    const perNoteGain = isChord ? 0.09 : 0.15;
     const voices = [], gains = [], blooms = [], midiNotes = [];
     offsets.forEach(off=>{
       const deg = baseDeg + off;
@@ -2013,7 +2031,7 @@
     panner.pan.value = (note.pad-2)*0.16;
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(0.055, t+0.02);
+    g.gain.linearRampToValueAtTime(0.11, t+0.02);
     g.gain.exponentialRampToValueAtTime(0.0001, t+0.5);
     g.connect(panner); panner.connect(melodyBus);
     if(echoDelay) panner.connect(echoDelay);
@@ -2154,7 +2172,7 @@
   // startMelodyNote's perNoteGain stays a constant, so pads, the A/S/D/F/G keyboard,
   // and the generative performer all sound exactly as before.
   function midiVelocityGain(velocity){
-    const BASE_GAIN = 0.075, MIN_FACTOR = 0.22;
+    const BASE_GAIN = 0.15, MIN_FACTOR = 0.22;
     const shaped = Math.pow(Math.max(0, Math.min(127, velocity))/127, 0.6);
     const factor = MIN_FACTOR + (1-MIN_FACTOR)*shaped;
     const modBoost = 1 + midiModWheel*0.35; // mod wheel: gentle swell on top, up to +35%
@@ -2597,7 +2615,7 @@
     recorderSilence.connect(ctx.destination);
 
     recorderNode = ctx.createScriptProcessor(4096, 2, 2);
-    masterGain.connect(recorderNode);
+    limiter.connect(recorderNode);
     recorderNode.connect(recorderSilence);
     recorderNode.onaudioprocess = (e)=>{
       if(!isRecording) return;
@@ -2627,7 +2645,7 @@
   }
   function stopRecorderTaps(){
     if(recorderNode){
-      masterGain.disconnect(recorderNode);
+      limiter.disconnect(recorderNode);
       recorderNode.disconnect();
       recorderNode.onaudioprocess = null;
       recorderNode = null;
