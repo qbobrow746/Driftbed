@@ -283,7 +283,15 @@
   .quick-actions button.recording{ color:#e2685f; }
   .quick-actions button.recording svg{ animation:recPulse 1.4s ease-in-out infinite; }
   .quick-actions button.looping{ color:var(--accent); }
+  .quick-actions button:disabled{ opacity:.45; cursor:default; }
+  .quick-actions button:disabled:hover{ color:var(--ink-dim); border-color:transparent; }
   @keyframes recPulse{ 0%,100%{ opacity:1; } 50%{ opacity:.35; } }
+
+  .rec-status{
+    font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:.66rem;
+    color:var(--ink-dim); font-variant-numeric:tabular-nums; align-self:center;
+  }
+  .rec-status.warn{ color:#e2685f; }
 
   .autofade{ display:flex; align-items:center; gap:var(--sp-2); }
   .autofade label{ font-size:.66rem; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-dim); }
@@ -517,6 +525,8 @@
           <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="5" fill="currentColor" stroke="none"/></svg>
           <span id="recordLabel">record</span>
         </button>
+        <button class="chip" id="chipStems" aria-pressed="false" title="Also export separate bed &amp; melody stems (roughly 3x the memory and file size)">stems</button>
+        <span class="rec-status" id="recStatus" aria-live="polite"></span>
       </div>
       <div class="autofade">
         <label for="autofade">Auto fade</label>
@@ -565,7 +575,7 @@
       <span id="modeReadout">Dune Drift</span>
     </footer>
 
-    <p class="note">Recording captures exactly what Presence lets through — press Play, dial it in, then hit record. Stopping it saves up to four files: a full mix, separate <code>bed</code> and <code>melody</code> stems (uncompressed <code>.wav</code>, pre-reverb, ready for a DAW), and — if you played anything — a <code>.mid</code> file of the notes themselves.</p>
+    <p class="note">Recording captures exactly what Presence lets through — press Play, dial it in, then hit record. Stopping it saves the full mix (uncompressed <code>.wav</code>) and, if you played anything, a <code>.mid</code> file of the notes. Turn on <strong>stems</strong> first to also get separate <code>bed</code> and <code>melody</code> <code>.wav</code> files (pre-reverb, ready for a DAW) — that roughly triples the memory a long take holds, so it's off by default. A take auto-stops and saves at 15 minutes.</p>
   </div>
 </main>
 
@@ -647,6 +657,7 @@
     arpRate:'med', arpPattern:'up',
     blendBiome:'', blendAmount:0, autoBreathe:false,
     chordSevenths:[true,true,true,true,true],
+    stemsOn:false,
     playing:false
   };
 
@@ -674,6 +685,9 @@
   let leftChunks=[], rightChunks=[], bedLeftChunks=[], bedRightChunks=[], melodyLeftChunks=[], melodyRightChunks=[];
   let bedRecorderNode=null, melodyRecorderNode=null;
   let midiEvents=[], recordStartMs=0;
+  let recordState='idle'; // 'idle' | 'recording' | 'saving' — drives the record button/status UI
+  let recordTimerInterval=null, recordAutoStopTimeout=null;
+  const REC_WARN_MS = 10*60*1000, REC_LIMIT_MS = 15*60*1000;
   let noiseSource, noiseFilter, noiseGustGain, gustDepth, noiseLevelGain, noisePanner, gustLfo, noisePanLfo;
   let echoDelay, echoFeedback, echoWet;
   let blendGain, blendChordIndex = 0, blendChordTimer = null, blendActiveVoices = [];
@@ -765,40 +779,9 @@
     brightness.connect(convolver); convolver.connect(wetGain); wetGain.connect(masterGain);
     masterGain.connect(ctx.destination);
 
-    // WAV recorder taps: ScriptProcessorNodes read raw PCM off the master mix and, for
-    // stems, off the bed/melody buses directly (pre-reverb, so they stay clean for a DAW).
-    // Each has to reach the destination to keep processing in every browser, so its own
-    // output goes through a silent gain (0) rather than actually being heard a second time.
-    recorderSilence = ctx.createGain();
-    recorderSilence.gain.value = 0;
-    recorderSilence.connect(ctx.destination);
-
-    recorderNode = ctx.createScriptProcessor(4096, 2, 2);
-    masterGain.connect(recorderNode);
-    recorderNode.connect(recorderSilence);
-    recorderNode.onaudioprocess = (e)=>{
-      if(!isRecording) return;
-      leftChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-      rightChunks.push(new Float32Array(e.inputBuffer.getChannelData(1)));
-    };
-
-    bedRecorderNode = ctx.createScriptProcessor(4096, 2, 2);
-    bedBus.connect(bedRecorderNode);
-    bedRecorderNode.connect(recorderSilence);
-    bedRecorderNode.onaudioprocess = (e)=>{
-      if(!isRecording) return;
-      bedLeftChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-      bedRightChunks.push(new Float32Array(e.inputBuffer.getChannelData(1)));
-    };
-
-    melodyRecorderNode = ctx.createScriptProcessor(4096, 2, 2);
-    melodyBus.connect(melodyRecorderNode);
-    melodyRecorderNode.connect(recorderSilence);
-    melodyRecorderNode.onaudioprocess = (e)=>{
-      if(!isRecording) return;
-      melodyLeftChunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-      melodyRightChunks.push(new Float32Array(e.inputBuffer.getChannelData(1)));
-    };
+    // WAV recorder taps (ScriptProcessorNodes reading raw PCM off the master mix and,
+    // for stems, the bed/melody buses) are created on demand in startRecorderTaps() —
+    // see the note there for why nothing recorder-related lives in the graph while idle.
 
     noiseSource = ctx.createBufferSource();
     noiseSource.buffer = makeNoiseBuffer(4);
@@ -1679,13 +1662,90 @@
   }
 
   // ---------- recording / export ----------
-  function flattenChunks(chunks, totalLen){
-    const out = new Float32Array(totalLen);
-    let offset = 0;
-    chunks.forEach(c=>{ out.set(c, offset); offset += c.length; });
+  // ScriptProcessorNode is deprecated but supported everywhere today; an AudioWorklet
+  // would need a Blob-URL module, which adds real failure modes to this offline-capable
+  // single-file app for a node that only runs for the few minutes a user is recording.
+  function floatTo16(channelData){
+    const out = new Int16Array(channelData.length);
+    for(let i=0;i<channelData.length;i++){
+      const s = Math.max(-1, Math.min(1, channelData[i]));
+      out[i] = s<0 ? s*0x8000 : s*0x7FFF;
+    }
     return out;
   }
-  function encodeWav(left, right, sampleRate){
+  function startRecorderTaps(){
+    // Created only while recording, and fully torn down in stopRecorderTaps() — nothing
+    // recorder-related sits in the audio graph, or fires onaudioprocess, while idle.
+    recorderSilence = ctx.createGain();
+    recorderSilence.gain.value = 0;
+    recorderSilence.connect(ctx.destination);
+
+    recorderNode = ctx.createScriptProcessor(4096, 2, 2);
+    masterGain.connect(recorderNode);
+    recorderNode.connect(recorderSilence);
+    recorderNode.onaudioprocess = (e)=>{
+      if(!isRecording) return;
+      leftChunks.push(floatTo16(e.inputBuffer.getChannelData(0)));
+      rightChunks.push(floatTo16(e.inputBuffer.getChannelData(1)));
+    };
+
+    if(state.stemsOn){
+      bedRecorderNode = ctx.createScriptProcessor(4096, 2, 2);
+      bedBus.connect(bedRecorderNode);
+      bedRecorderNode.connect(recorderSilence);
+      bedRecorderNode.onaudioprocess = (e)=>{
+        if(!isRecording) return;
+        bedLeftChunks.push(floatTo16(e.inputBuffer.getChannelData(0)));
+        bedRightChunks.push(floatTo16(e.inputBuffer.getChannelData(1)));
+      };
+
+      melodyRecorderNode = ctx.createScriptProcessor(4096, 2, 2);
+      melodyBus.connect(melodyRecorderNode);
+      melodyRecorderNode.connect(recorderSilence);
+      melodyRecorderNode.onaudioprocess = (e)=>{
+        if(!isRecording) return;
+        melodyLeftChunks.push(floatTo16(e.inputBuffer.getChannelData(0)));
+        melodyRightChunks.push(floatTo16(e.inputBuffer.getChannelData(1)));
+      };
+    }
+  }
+  function stopRecorderTaps(){
+    if(recorderNode){
+      masterGain.disconnect(recorderNode);
+      recorderNode.disconnect();
+      recorderNode.onaudioprocess = null;
+      recorderNode = null;
+    }
+    if(bedRecorderNode){
+      bedBus.disconnect(bedRecorderNode);
+      bedRecorderNode.disconnect();
+      bedRecorderNode.onaudioprocess = null;
+      bedRecorderNode = null;
+    }
+    if(melodyRecorderNode){
+      melodyBus.disconnect(melodyRecorderNode);
+      melodyRecorderNode.disconnect();
+      melodyRecorderNode.onaudioprocess = null;
+      melodyRecorderNode = null;
+    }
+    if(recorderSilence){
+      recorderSilence.disconnect();
+      recorderSilence = null;
+    }
+  }
+  async function flattenChunks(chunks, totalLen){
+    const out = new Int16Array(totalLen);
+    let offset = 0;
+    for(let i=0;i<chunks.length;i++){
+      out.set(chunks[i], offset);
+      offset += chunks[i].length;
+      if(i%256===255) await new Promise(r=>setTimeout(r,0));
+    }
+    return out;
+  }
+  async function encodeWav(left, right, sampleRate){
+    // left/right arrive as already-clamped Int16 chunks (converted at capture time in
+    // floatTo16), so building the file is typed-array copying, not per-sample float math.
     const len = left.length;
     const buffer = new ArrayBuffer(44 + len*4); // 16-bit stereo = 4 bytes/frame
     const view = new DataView(buffer);
@@ -1703,12 +1763,18 @@
     view.setUint16(34, 16, true);         // bits per sample
     writeStr(36,'data');
     view.setUint32(40, len*4, true);
-    let o = 44;
-    for(let i=0;i<len;i++){
-      let s = Math.max(-1, Math.min(1, left[i]));
-      view.setInt16(o, s<0 ? s*0x8000 : s*0x7FFF, true); o+=2;
-      s = Math.max(-1, Math.min(1, right[i]));
-      view.setInt16(o, s<0 ? s*0x8000 : s*0x7FFF, true); o+=2;
+    // Every JS engine this app runs on (V8/JSC/SpiderMonkey) is little-endian, matching the
+    // WAV spec's byte order, so we can interleave straight into a native Int16 view instead
+    // of going through DataView.setInt16 per sample.
+    const samples = new Int16Array(buffer, 44, len*2);
+    const CHUNK = 200000; // samples/channel per yield, so a 15-min take can't freeze the tab
+    for(let start=0; start<len; start+=CHUNK){
+      const end = Math.min(len, start+CHUNK);
+      for(let i=start;i<end;i++){
+        samples[i*2] = left[i];
+        samples[i*2+1] = right[i];
+      }
+      if(end<len) await new Promise(r=>setTimeout(r,0));
     }
     return new Blob([view], { type:'audio/wav' });
   }
@@ -1724,13 +1790,34 @@
       setTimeout(()=>URL.revokeObjectURL(url), 4000);
     }, delayMs);
   }
-  function exportStem(leftChunks, rightChunks, name, ts, delayMs){
+  async function exportStem(leftChunks, rightChunks, name, ts, delayMs){
     const totalLen = leftChunks.reduce((n,c)=>n+c.length, 0);
     if(totalLen===0) return;
-    const left = flattenChunks(leftChunks, totalLen);
-    const right = flattenChunks(rightChunks, totalLen);
-    const blob = encodeWav(left, right, ctx.sampleRate);
+    const left = await flattenChunks(leftChunks, totalLen);
+    const right = await flattenChunks(rightChunks, totalLen);
+    const blob = await encodeWav(left, right, ctx.sampleRate);
     downloadBlob(blob, `driftbed-${state.biome}-${ts}-${name}.wav`, delayMs);
+  }
+  function estimateRecordingBytes(){
+    const sum = arr => arr.reduce((n,c)=>n + c.length*2, 0); // Int16 = 2 bytes/sample
+    let bytes = sum(leftChunks) + sum(rightChunks);
+    if(state.stemsOn){
+      bytes += sum(bedLeftChunks) + sum(bedRightChunks) + sum(melodyLeftChunks) + sum(melodyRightChunks);
+    }
+    return bytes;
+  }
+  function formatBytes(bytes){
+    return bytes < 1024*1024 ? Math.round(bytes/1024)+' KB' : (bytes/(1024*1024)).toFixed(1)+' MB';
+  }
+  function updateRecordStatus(){
+    const el = document.getElementById('recStatus');
+    if(!el) return;
+    if(recordState!=='recording'){ return; }
+    const elapsedMs = performance.now() - recordStartMs;
+    const m = Math.floor(elapsedMs/60000), s = Math.floor((elapsedMs%60000)/1000);
+    const stemsNote = state.stemsOn ? ' (3 stems)' : '';
+    el.textContent = `${m}:${String(s).padStart(2,'0')} · ~${formatBytes(estimateRecordingBytes())}${stemsNote}`;
+    el.classList.toggle('warn', elapsedMs >= REC_WARN_MS);
   }
 
   // ---------- MIDI export: what you actually played, as a real .mid file ----------
@@ -1776,35 +1863,70 @@
     return new Blob([new Uint8Array([...header, ...trackHeader, ...trackBytes])], { type:'audio/midi' });
   }
 
-  function toggleRecord(){
+  async function toggleRecord(){
+    // State machine: idle -> recording -> saving -> idle. The button is disabled for the
+    // whole "saving" phase, so a second recording can never start while one is being saved.
+    if(recordState==='saving') return;
     initAudio();
     const btn = document.getElementById('recordBtn');
     const label = document.getElementById('recordLabel');
-    if(!isRecording){
+    const stemsChip = document.getElementById('chipStems');
+    const statusEl = document.getElementById('recStatus');
+
+    if(recordState==='idle'){
       leftChunks = []; rightChunks = [];
       bedLeftChunks = []; bedRightChunks = [];
       melodyLeftChunks = []; melodyRightChunks = [];
       midiEvents = [];
       recordStartMs = performance.now();
       isRecording = true;
+      recordState = 'recording';
+      startRecorderTaps();
       btn.classList.add('recording');
       label.textContent = 'stop & save';
-    } else {
-      isRecording = false;
-      const ts = Date.now();
-      exportStem(leftChunks, rightChunks, 'master', ts, 0);
-      exportStem(bedLeftChunks, bedRightChunks, 'bed', ts, 200);
-      exportStem(melodyLeftChunks, melodyRightChunks, 'melody', ts, 400);
-      if(midiEvents.length){
-        downloadBlob(buildMidiFile(midiEvents), `driftbed-${state.biome}-${ts}-melody.mid`, 600);
-      }
-      leftChunks = []; rightChunks = [];
-      bedLeftChunks = []; bedRightChunks = [];
-      melodyLeftChunks = []; melodyRightChunks = [];
-      midiEvents = [];
-      btn.classList.remove('recording');
-      label.textContent = 'record';
+      if(stemsChip) stemsChip.disabled = true;
+      updateRecordStatus();
+      recordTimerInterval = setInterval(updateRecordStatus, 1000);
+      recordAutoStopTimeout = setTimeout(()=>{
+        if(recordState==='recording') toggleRecord();
+      }, REC_LIMIT_MS);
+      return;
     }
+
+    // recordState === 'recording' -> stop, then save asynchronously
+    isRecording = false;
+    recordState = 'saving';
+    stopRecorderTaps();
+    if(recordTimerInterval){ clearInterval(recordTimerInterval); recordTimerInterval = null; }
+    if(recordAutoStopTimeout){ clearTimeout(recordAutoStopTimeout); recordAutoStopTimeout = null; }
+    btn.classList.remove('recording');
+    btn.disabled = true;
+    label.textContent = 'saving…';
+    if(statusEl){ statusEl.textContent = 'saving…'; statusEl.classList.remove('warn'); }
+
+    const ts = Date.now();
+    // Each stem is flattened/encoded/downloaded in turn, yielding periodically, and its
+    // chunk arrays are freed immediately afterward so peak memory stays as low as possible.
+    // The small delayMs stagger (kept from the original implementation) avoids browsers
+    // dropping near-simultaneous downloads.
+    await exportStem(leftChunks, rightChunks, 'master', ts, 0);
+    leftChunks = []; rightChunks = [];
+    if(state.stemsOn){
+      await exportStem(bedLeftChunks, bedRightChunks, 'bed', ts, 150);
+      bedLeftChunks = []; bedRightChunks = [];
+      await exportStem(melodyLeftChunks, melodyRightChunks, 'melody', ts, 150);
+      melodyLeftChunks = []; melodyRightChunks = [];
+    }
+    if(midiEvents.length){
+      downloadBlob(buildMidiFile(midiEvents), `driftbed-${state.biome}-${ts}-melody.mid`, 150);
+    }
+    midiEvents = [];
+
+    btn.disabled = false;
+    if(stemsChip) stemsChip.disabled = false;
+    label.textContent = 'record';
+    if(statusEl) statusEl.textContent = '';
+    recordState = 'idle';
   }
 
   // ---------- UI wiring ----------
@@ -1908,6 +2030,7 @@
   wireChip('chipEcho', 'echoOn', ()=>{ if(ctx) applyBiomeEcho(BIOMES[state.biome]); });
   wireChip('chipDrift', 'colorDriftOn', ()=>{});
   wireChip('chipBreathe', 'autoBreathe', ()=>applyAutoBreathe(state.autoBreathe));
+  wireChip('chipStems', 'stemsOn', ()=>{});
   applyAutoBreathe(state.autoBreathe);
 
   const SEG_KEY_MAP = { mode:'melodyMode', voice:'voice', rate:'arpRate', pattern:'arpPattern' };

@@ -19,8 +19,8 @@ Orchestrator: Opus 5 (plans + verifies + commits). Builders: Sonnet 5 agents, on
 | # | Unit | State | Commit |
 |---|------|-------|--------|
 | P1 | git baseline + .gitignore | done | `71fb96b` |
-| P2 | tools/build-standalone.mjs, tools/check.mjs, AGENT_NOTES.md | dispatched | — |
-| 1 | Recorder hardening (on-demand taps, non-blocking encode, length cap) | queued | — |
+| P2 | tools/build-standalone.mjs, tools/check.mjs, AGENT_NOTES.md | done, adversarially verified | `b724a81` |
+| 1 | Recorder hardening (on-demand taps, non-blocking encode, length cap) | dispatched | — |
 | 2 | Presets + shareable permalink (URL hash, localStorage, factory patches) | queued | — |
 | 3 | Scale + root decoupled from biome | queued | — |
 | 4 | Audio-reactive visuals (AnalyserNode) | queued | — |
@@ -41,3 +41,11 @@ width control, "song mode" arc across biomes.
   unbounded Float32 chunks across 3 stems and then encode 3 WAVs synchronously on the main thread.
 - `pwa/index.html` and `driftbed-standalone.html` differed only by title, PWA head block, and the
   service-worker registration script — confirmed by diff before the run started.
+- The harness's first cut silently leaked three PWA metas into the standalone: its end marker
+  `mobile-web-app-capable` matched `apple-mobile-web-app-capable` as a substring. Fixed by wrapping
+  the block in paired `<!-- installable app metadata -->` / `<!-- /... -->` comments. Lesson for
+  later units: a "contains" match on an HTML attribute value can collide with a longer name.
+- Harness is adversarially verified: deliberately introducing a syntax error, a `getElementById`
+  pointing at a nonexistent id, a duplicate id, and a stale standalone each produce a non-zero exit.
+  So a green `check.mjs` is meaningful, but it proves nothing about audio behavior — that needs the
+  browser pass at milestones.
