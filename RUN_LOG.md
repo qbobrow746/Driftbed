@@ -26,8 +26,8 @@ Orchestrator: Opus 5 (plans + verifies + commits). Builders: Sonnet 5 agents, on
 | 4 | Audio-reactive visuals (AnalyserNode) | done, browser-verified | `28c4692` |
 | 5 | Generative auto-melodist | done, browser-verified | `2cd3c55` |
 | 6 | Web MIDI input | done, browser-verified | `20ca3c5` |
-| 7 | Freeze + tape character | dispatched | — |
-| 8 | Three new biomes (rain/marsh, ocean/tide, void/nebula) | queued | — |
+| 7 | Freeze + tape character | done, browser-verified | `65a6f5a` |
+| 8 | Three new biomes (rain/marsh, ocean/tide, void/nebula) | dispatched | — |
 | 9 | Seamless loop export for game use | queued | — |
 | 10 | Mobile + a11y polish pass + README | queued | — |
 
@@ -41,6 +41,18 @@ width control, "song mode" arc across biomes.
   to MIDI-input notes. Worth showing pad activity regardless of what triggered the note.
 - Permalinks are ~1330 chars because the payload is plain JSON base64'd and includes chord edits
   for all five biomes. Works fine, but could be much shorter if it ever matters.
+
+## Time budget
+
+At 19:54 (86 min in) units P1-P2 and 1-7 were done and committed, with 8 dispatched. If everything
+can't finish, prefer 9 (seamless loop export) over 10 (polish) — this folder exists to score a VR
+game, so an export that loops cleanly in an engine is worth more than a polish pass. Report honestly
+on whatever doesn't land rather than rushing it in unverified.
+
+**Interruption:** at ~20:03 the account hit its session usage limit and the unit-8 agent was killed
+mid-run. It had only been reading, so `pwa/index.html` was untouched and the tree stayed green at
+`65a6f5a` — per-feature commits meant the failure cost nothing. Work resumed 23:01 with unit 8
+re-dispatched from scratch. Total productive time before the outage: ~95 min.
 
 ## Notes / findings
 
