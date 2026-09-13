@@ -260,6 +260,11 @@
     .breathe::before, .breathe.playing::before{ animation:none; }
     .quick-actions button.recording svg{ animation:none; }
     .first-run{ animation:none; }
+    /* now-playing progress fill (below) is a slow width transition — real motion, so it
+       goes away entirely here rather than just running instantly. The chord dots and the
+       aria-live text alternative still convey position without it. */
+    .np-track{ display:none; }
+    .now-playing, .np-dot{ transition:none; }
   }
   .breathe:focus-visible{ outline:2px solid var(--focus); outline-offset:3px; }
 
@@ -575,6 +580,7 @@
     font-size:var(--fs-4);
     color:var(--ink-dim);
     display:flex; justify-content:space-between; align-items:center;
+    flex-wrap:wrap; row-gap:var(--sp-2); column-gap:var(--sp-4);
     border-top:1px solid var(--panel-border);
     padding-top:var(--sp-4);
   }
@@ -583,6 +589,40 @@
     box-shadow:0 0 5px color-mix(in srgb, var(--accent) 55%, transparent);
   }
   footer.readout .left{ display:flex; align-items:center; gap:var(--sp-2); }
+
+  /* Now-playing: shares the footer row with the scale/mode readout rather than adding a
+     new line, so the panel's height is untouched at desktop widths (it only wraps to its
+     own line on very narrow viewports, where the page already scrolls). Four dots mark
+     the chord loop (chordIndex % chords.length, always 4), lit one at a time in --accent;
+     the hairline track beneath fills toward the next automatic change. The fill's
+     transition-duration is set in JS to the real remaining ms (see armChordTimer()) so it
+     is driven entirely by CSS — no rAF or interval of our own ticks it, and it reads as
+     genuinely slow rather than a countdown. Frozen swaps the current dot to a static
+     outline (no motion) instead of just leaving the bar looking stalled; not-playing dims
+     the whole cluster. The dots and track are aria-hidden — #npStatus is the one text
+     alternative, and it only changes on the same discrete events (chord change, freeze
+     toggle), never once a second, so it can safely stay aria-live without becoming noise. */
+  .now-playing{ display:flex; align-items:center; gap:var(--sp-2); opacity:1; transition:opacity .4s ease; }
+  .now-playing.is-idle{ opacity:.4; }
+  .np-dots{ display:flex; gap:.3rem; }
+  .np-dot{
+    box-sizing:border-box;
+    width:5px; height:5px; border-radius:999px;
+    background:var(--panel-border); border:1.5px solid transparent;
+    transition:background .5s ease, border-color .5s ease;
+  }
+  .np-dot.current{
+    background:var(--accent); border-color:var(--accent);
+    box-shadow:0 0 4px color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  .now-playing.is-held .np-dot.current{ background:transparent; box-shadow:none; }
+  .np-track{ width:2.6rem; height:2px; border-radius:2px; background:var(--track); overflow:hidden; }
+  .np-fill{ height:100%; width:0%; background:color-mix(in srgb, var(--accent) 70%, transparent); }
+
+  .sr-only{
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+    overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;
+  }
 
   /* The recording note: three short paragraphs (see markup) instead of one dense block,
      with a touch more size/line-height than the rest of the tertiary copy so it reads
@@ -940,6 +980,13 @@
 
     <footer class="readout">
       <span class="left"><span class="dot"></span><span id="scaleReadout">E harmonic minor</span></span>
+      <div class="now-playing" id="nowPlaying">
+        <div class="np-dots" id="npDots" aria-hidden="true">
+          <span class="np-dot"></span><span class="np-dot"></span><span class="np-dot"></span><span class="np-dot"></span>
+        </div>
+        <div class="np-track" aria-hidden="true"><div class="np-fill" id="npFill"></div></div>
+        <span class="sr-only" id="npStatus" aria-live="polite"></span>
+      </div>
       <span id="modeReadout">Dune Drift</span>
     </footer>
 
@@ -1697,7 +1744,10 @@
   // Arms the raw timer for the next automatic advance, `ms` from now, and records when it
   // will fire (chordTimerFireAt) so a freeze engaged partway through can compute the exact
   // remainder. Only scheduleNextChord()/setFreeze() should call this.
-  function armChordTimer(ms){
+  // `resume` is true only when reconcileFreezeTimer() is re-arming a freeze's leftover
+  // time — it tells the now-playing progress fill to continue from where it was paused
+  // instead of resetting to empty (see startChordProgress()).
+  function armChordTimer(ms, resume){
     chordTimerFireAt = Date.now() + ms;
     chordTimer = setTimeout(()=>{
       chordTimer = null; chordTimerFireAt = null;
@@ -1705,6 +1755,70 @@
       playCurrentChord();
       scheduleNextChord();
     }, ms);
+    startChordProgress(ms, resume);
+  }
+
+  // ---------- now-playing readout: chord position + progress toward the next change ----------
+  // Surfaces state that already existed (chordIndex, chordTimerFireAt, freezeOn) in the
+  // main panel's footer instead of leaving it only in the corner chord-mark and the chords
+  // popover. syncNowPlayingReadout() (dots + the sr-only status text) is called from the
+  // places that already run on every genuine chord/key/freeze/play change — updateChordEditor(),
+  // updateFreezeUI(), updatePlayUI() — so no polling is needed for it. The progress fill is
+  // separate and driven purely by CSS: startChordProgress()/pauseChordProgress() below give
+  // it a transition-duration equal to the real remaining time on the actual timer, so the
+  // browser interpolates it with zero JS ticking in between.
+  function syncNowPlayingReadout(){
+    const wrap = document.getElementById('nowPlaying');
+    if(!wrap) return;
+    const { biome, chord, key } = currentChord();
+    const total = biome.chords.length;
+    const activeIdx = chordIndex % total;
+    const dotsWrap = document.getElementById('npDots');
+    if(dotsWrap){
+      dotsWrap.querySelectorAll('.np-dot').forEach((dot,i)=>{
+        dot.classList.toggle('current', i===activeIdx);
+      });
+    }
+    wrap.classList.toggle('is-held', !!state.freezeOn);
+    wrap.classList.toggle('is-idle', !state.playing);
+    const status = document.getElementById('npStatus');
+    if(status){
+      const name = chordQualityLabel(key, chord);
+      status.textContent = `Chord ${activeIdx+1} of ${total} — ${name}` + (state.freezeOn ? ', held' : '');
+    }
+  }
+  // Starts (or resumes) the hairline fill's CSS transition toward 100%, timed to exactly
+  // `ms` — the same duration armChordTimer() just armed the real setTimeout with, so the
+  // bar and the actual chord change land together with no drift and no JS in between.
+  // `resume` continues from wherever pauseChordProgress() left the bar rather than
+  // resetting it to empty (a freeze/unfreeze shouldn't visually restart the segment).
+  function startChordProgress(ms, resume){
+    const fill = document.getElementById('npFill');
+    if(!fill || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if(!resume){
+      fill.style.transition = 'none';
+      fill.style.width = '0%';
+      void fill.offsetWidth; // force layout so the reset above lands before animating below
+    }
+    fill.style.transition = `width ${ms}ms linear`;
+    requestAnimationFrame(()=>{ fill.style.width = '100%'; });
+  }
+  // Pins the fill exactly where its transition currently sits — reads the live computed
+  // width rather than tracking elapsed time ourselves, since the browser is already
+  // interpolating it precisely.
+  function pauseChordProgress(){
+    const fill = document.getElementById('npFill');
+    if(!fill || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    fill.style.width = getComputedStyle(fill).width;
+    fill.style.transition = 'none';
+  }
+  // Only needed when a fresh loop starts with no timer armed to animate toward yet
+  // (switching biome while paused resets chordIndex but arms nothing).
+  function resetChordProgress(){
+    const fill = document.getElementById('npFill');
+    if(!fill) return;
+    fill.style.transition = 'none';
+    fill.style.width = '0%';
   }
 
   function scheduleNextChord(){
@@ -1730,6 +1844,7 @@
         clearTimeout(chordTimer);
         freezeRemainingMs = Math.max(0, chordTimerFireAt - Date.now());
         chordTimer = null; chordTimerFireAt = null;
+        pauseChordProgress();
       }
       // The blended second biome runs its own independent loop; hold it as well. It resumes
       // on a fresh full cycle rather than an exact remainder — it's a secondary texture with
@@ -1742,7 +1857,7 @@
       if(freezeRemainingMs != null){
         const ms = freezeRemainingMs;
         freezeRemainingMs = null;
-        armChordTimer(ms);
+        armChordTimer(ms, true);
       } else {
         scheduleNextChord();
       }
@@ -1754,6 +1869,7 @@
     if(!btn) return;
     btn.classList.toggle('on', state.freezeOn);
     btn.setAttribute('aria-pressed', String(state.freezeOn));
+    syncNowPlayingReadout();
   }
   function setFreeze(on){
     state.freezeOn = on;
@@ -2082,6 +2198,7 @@
     const wrap = document.getElementById('chordSlots');
     wrap.innerHTML = '';
     const activeIdx = chordIndex % biome.chords.length;
+    syncNowPlayingReadout();
     biome.chords.forEach((chord, idx)=>{
       const col = document.createElement('div');
       col.className = 'chord-slot-col' + (idx===activeIdx ? ' now-playing' : '');
@@ -2722,6 +2839,8 @@
       outgoing.forEach(g => fadeOutGroup(g, 8));
       spawnChordVoices(biome, currentKey(), biome.chords[0], 8);
       scheduleNextChord();
+    } else {
+      resetChordProgress();
     }
     updateMelodyPads();
     retuneHeldNotes();
@@ -2768,6 +2887,7 @@
     btn.setAttribute('aria-label', state.playing ? 'Pause' : 'Play');
     play.style.display = state.playing ? 'none' : '';
     pause.style.display = state.playing ? '' : 'none';
+    syncNowPlayingReadout();
   }
 
   // ---------- intensity macro ----------

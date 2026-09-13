@@ -28,8 +28,8 @@ visual weight.
 | 1 | Responsive two-column layout on wide viewports | done, browser-verified | `39f18ab` |
 | 2 | Visual hierarchy + craft pass (type, spacing, states, transitions) | done, browser-verified | `6c6de27` |
 | 3 | First-run guidance + honest labels (Presence = volume) | done, browser-verified | `ce092db` |
-| 4 | The canvas field: depth, per-biome signature, grading | dispatched | — |
-| 5 | Stretch: now-playing state + micro-interactions | queued | — |
+| 4 | The canvas field: depth, per-biome signature, grading | done, browser-verified | `e276f33` |
+| 5 | Stretch: now-playing state + micro-interactions | dispatched | — |
 
 ## Notes for this run
 
