@@ -84,7 +84,7 @@
   }
 
   .mark{
-    position:fixed; top:max(2rem, env(safe-area-inset-top) + .6rem); left:max(2rem, env(safe-area-inset-left) + .6rem); z-index:2;
+    position:fixed; top:max(2rem, env(safe-area-inset-top) + .6rem); left:max(2rem, env(safe-area-inset-left) + .6rem); z-index:4;
     display:flex; flex-direction:column; gap:var(--sp-1);
     user-select:none;
   }
@@ -134,7 +134,7 @@
     display:flex; justify-content:center;
     align-items:center;
     align-items:safe center;
-    padding-top:max(5.5rem, env(safe-area-inset-top) + 5rem);
+    padding-top:max(8rem, env(safe-area-inset-top) + 7.5rem);
     padding-bottom:max(4rem, env(safe-area-inset-bottom) + 3.5rem);
     padding-left:var(--sp-5);
     padding-right:var(--sp-5);
@@ -170,6 +170,84 @@
       display:flex; flex-direction:column; gap:1.8rem;
       flex:1 1 0; min-width:0;
     }
+    .sb-grid{ grid-template-columns:repeat(2, 1fr); }
+  }
+
+  /* soundboard: a second top-level view (see .view-tabs), same panel chrome as .panel
+     but its own layout underneath — a heading/record row, then one heading+grid per
+     CREEPY_SOUNDS group. Kept as a separate class rather than reusing .panel so its
+     layout can't be pulled into .panel's row-flex/panel-col rules above at 960px. */
+  .soundboard{
+    width:min(64rem, 100%);
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:28px;
+    backdrop-filter:blur(22px) saturate(1.1);
+    -webkit-backdrop-filter:blur(22px) saturate(1.1);
+    box-shadow:0 30px 80px -30px rgba(0,0,0,.65);
+    padding:2.4rem 2.2rem 1.8rem;
+    display:flex; flex-direction:column; gap:1.8rem;
+    margin:auto;
+  }
+  /* Both view panels set display:flex above, which is an author rule and therefore beats the
+     browser's built-in [hidden]{display:none} — so toggling the hidden attribute alone does NOT
+     hide them, and both views render at once. Each needs its own explicit rule. */
+  .panel[hidden], .soundboard[hidden]{ display:none; }
+  .sb-header{ display:flex; justify-content:space-between; align-items:flex-start; gap:var(--sp-4); flex-wrap:wrap; }
+  .sb-title{
+    margin:0;
+    font-family:'Fraunces', ui-serif, Georgia, serif; font-style:italic; font-optical-sizing:auto;
+    font-weight:500; font-size:var(--fs-6); color:var(--ink); opacity:.92;
+  }
+  .sb-sub{ margin:.25rem 0 0; font-size:var(--fs-3); color:var(--ink-dim); max-width:34ch; line-height:1.5; }
+  .sb-record{ display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap; }
+  .sb-record button{
+    background:none; border:1px solid var(--panel-border); border-radius:999px;
+    color:var(--ink-dim); font-family:'Manrope'; font-size:var(--fs-3); letter-spacing:.03em;
+    cursor:pointer; padding:.4rem .9rem;
+    display:flex; align-items:center; gap:var(--sp-1);
+    transition:color .2s ease, border-color .2s ease, background .2s ease;
+  }
+  .sb-record button svg{ width:.85rem; height:.85rem; }
+  .sb-record button:hover{ color:var(--ink); border-color:color-mix(in srgb, var(--accent) 40%, var(--panel-border)); }
+  .sb-record button:active{ filter:brightness(.9); }
+  .sb-record button:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
+  .sb-record button.recording{ color:#e2685f; border-color:color-mix(in srgb, #e2685f 45%, var(--panel-border)); }
+  .sb-record button.recording svg{ animation:recPulse 1.4s ease-in-out infinite; }
+
+  .sb-groups{ display:flex; flex-direction:column; gap:1.4rem; }
+  .sb-group{ display:flex; flex-direction:column; gap:var(--sp-2); }
+  .sb-group-heading{
+    font-size:var(--fs-1); letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3);
+    border-top:1px solid var(--panel-border); padding-top:var(--sp-3);
+  }
+  .sb-group:first-child .sb-group-heading{ border-top:none; padding-top:0; }
+  /* one column of stacked, thumb-friendly buttons below 960px; two above — see the
+     min-width:960px rule alongside .panel-col further up. */
+  .sb-grid{ display:grid; grid-template-columns:1fr; gap:var(--sp-2); }
+  .sound-btn{
+    min-height:3.25rem;
+    border:1px solid color-mix(in srgb, var(--accent) 22%, var(--panel-border));
+    background:color-mix(in srgb, var(--accent) 6%, rgba(255,255,255,.035));
+    border-radius:14px;
+    color:var(--ink); cursor:pointer; user-select:none;
+    display:flex; align-items:center; justify-content:space-between; gap:var(--sp-3);
+    padding:.75rem 1.1rem;
+    font-family:'Manrope'; font-size:var(--fs-5); text-align:left;
+    transition:border-color .15s ease, background .15s ease, transform .1s ease;
+  }
+  .sound-btn:hover{ border-color:color-mix(in srgb, var(--accent) 38%, var(--panel-border)); }
+  .sound-btn:active, .sound-btn.hit{
+    border-color:color-mix(in srgb, var(--accent) 70%, transparent);
+    background:color-mix(in srgb, var(--accent) 24%, transparent);
+    transform:scale(.97);
+  }
+  .sound-btn:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
+  .sound-btn .sound-btn-label{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sound-btn .key{
+    font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:var(--fs-1); color:var(--ink-3);
+    text-transform:uppercase; border:1px solid var(--panel-border); border-radius:5px;
+    padding:.1rem .35rem; flex:none;
   }
 
   /* first-run hint: teaches the three things a newcomer needs (press play, Presence is the
@@ -276,6 +354,9 @@
        aria-live text alternative still convey position without it. */
     .np-track{ display:none; }
     .now-playing, .np-dot{ transition:none; }
+    .sound-btn{ transition:none; }
+    .sound-btn:active, .sound-btn.hit{ transform:none; }
+    .sb-record button.recording svg{ animation:none; }
   }
   .breathe:focus-visible{ outline:2px solid var(--focus); outline-offset:3px; }
 
@@ -354,6 +435,22 @@
   .side-tab.on{ color:var(--accent); border-color:color-mix(in srgb, var(--accent) 55%, transparent); background:color-mix(in srgb, var(--accent) 12%, transparent); }
   .side-tab:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
   .side-tab[hidden]{ display:none; }
+
+  /* view switcher (instrument / sounds) — lives beside the wordmark, outside .stage, so
+     it's reachable no matter which view is showing. Same tertiary chip language as
+     .side-tab/.chip, just a notch louder (fs-3, not fs-1) since this is primary
+     navigation rather than a set-once popover trigger. */
+  .view-tabs{ display:flex; gap:var(--sp-1); margin-top:var(--sp-2); flex-wrap:wrap; }
+  .view-tab{
+    border:1px solid var(--panel-border); background:rgba(255,255,255,.03);
+    color:var(--ink-3); border-radius:999px; padding:.32rem .8rem;
+    font-family:'Manrope'; font-size:var(--fs-3); letter-spacing:.03em; cursor:pointer;
+    transition:color .2s ease, border-color .2s ease, background .2s ease;
+  }
+  .view-tab:hover{ color:var(--ink-dim); }
+  .view-tab:active{ filter:brightness(.9); }
+  .view-tab.on{ color:var(--accent); font-weight:600; border-color:color-mix(in srgb, var(--accent) 55%, transparent); background:color-mix(in srgb, var(--accent) 12%, transparent); }
+  .view-tab:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
 
   /* Popovers: tertiary content (root/scale, MIDI, presets, chord editing, tone) that
      should appear/disappear with a short, tasteful transition rather than snapping via
@@ -651,7 +748,7 @@
 
   @media (max-width:480px){
     .stage{
-      padding-top:max(4.5rem, env(safe-area-inset-top) + 4rem);
+      padding-top:max(7rem, env(safe-area-inset-top) + 6.5rem);
       padding-bottom:max(3.2rem, env(safe-area-inset-bottom) + 2.8rem);
       padding-left:1rem; padding-right:1rem;
     }
@@ -659,6 +756,9 @@
     .mark-name{ font-size:var(--fs-8); }
     .chord-mark{ bottom:max(1rem, env(safe-area-inset-bottom) + .5rem); left:max(1rem, env(safe-area-inset-left) + .5rem); font-size:var(--fs-4); }
     .panel{ padding:1.5rem 1.2rem 1.2rem; gap:1.3rem; border-radius:20px; }
+    .soundboard{ padding:1.5rem 1.2rem 1.2rem; gap:1.3rem; border-radius:20px; }
+    .view-tabs{ gap:.3rem; }
+    .view-tab{ font-size:var(--fs-1); padding:.28rem .6rem; }
     .first-run{ padding:var(--sp-3) var(--sp-5) var(--sp-2) var(--sp-3); }
     .totems-row{ gap:var(--sp-1); }
     /* Eight biomes don't fit one phone row without shrinking the totems below a usable tap
@@ -695,13 +795,17 @@
 <div class="mark">
   <span class="mark-name">Driftbed</span>
   <span class="mark-sub">ambient layers · standalone</span>
+  <div class="view-tabs" role="tablist" aria-label="View">
+    <button class="view-tab" id="viewTabInstrument" role="tab" aria-selected="true" aria-controls="instrumentPanel" tabindex="0">instrument</button>
+    <button class="view-tab" id="viewTabSounds" role="tab" aria-selected="false" aria-controls="soundboardPanel" tabindex="-1">sounds</button>
+  </div>
   <button class="hint-reopen" id="firstRunReopen" aria-label="Show the quick start hint">?</button>
 </div>
 
 <div class="chord-mark" id="chordReadout"></div>
 
 <main class="stage">
-  <div class="panel">
+  <div class="panel" id="instrumentPanel" role="tabpanel" aria-labelledby="viewTabInstrument">
     <div class="panel-col">
     <div class="first-run" id="firstRun" role="group" aria-label="Quick start" hidden>
       <button class="first-run-close" id="firstRunClose" aria-label="Dismiss quick start hint">&times;</button>
@@ -1009,6 +1113,23 @@
       <p>Turn on <strong>stems</strong> first for separate <code>bed</code> and <code>melody</code> <code>.wav</code> files too, ready for a DAW — roughly triples the memory a long take holds, so it's off by default. A take auto-stops and saves at 15 minutes.</p>
     </div>
     </div>
+  </div>
+
+  <div class="soundboard" id="soundboardPanel" role="tabpanel" aria-labelledby="viewTabSounds" hidden>
+    <div class="sb-header">
+      <div>
+        <p class="sb-title">Sounds</p>
+        <p class="sb-sub">Silent until you press one — tap a button, use its key, or hit record to capture what you play.</p>
+      </div>
+      <div class="sb-record">
+        <button id="sbRecordBtn" aria-label="Start recording" aria-pressed="false" title="Record the output to a file">
+          <svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="5" fill="currentColor" stroke="none"/></svg>
+          <span id="sbRecordLabel">record</span>
+        </button>
+        <span class="rec-status" id="sbRecStatus" aria-live="polite"></span>
+      </div>
+    </div>
+    <div class="sb-groups" id="soundboardGrid"></div>
   </div>
 </main>
 
@@ -2246,6 +2367,457 @@
     src.start(t); src.stop(t+dur+0.05);
   }
 
+  // ---------- Soundboard: creepy one-shot SFX library ----------
+  // Standalone "press a button" sounds for a future soundboard UI. Each one is a
+  // self-contained one-shot: no freq/args, picks its own pitch/timing/pan/decay randomly
+  // on every call so repeated presses don't sound identical. All route to bedBus (with the
+  // usual optional echo send) so the existing recorder/WAV export captures them for free,
+  // and all open/close masterGain the same way startMelodyNote()/startMidiNote() do, since
+  // masterGain sits near zero until Play (or a played note) opens it.
+  function sfxOpen(){
+    initAudio();
+    if(ctx.state==='suspended') ctx.resume();
+    openMasterForPlayedNote();
+  }
+  function sfxClose(durSecs){
+    setTimeout(closeMasterAfterPlayedNote, Math.max(0, durSecs*1000));
+  }
+
+  // -- Water --
+
+  // single resonant drip, pitch/decay randomized each press
+  function playSfxDrip(){
+    sfxOpen();
+    const t = ctx.currentTime;
+    const freq = 500 + Math.random()*400;
+    const dur = 1.6 + Math.random()*0.6;
+    const o = ctx.createOscillator(); o.type='sine';
+    o.frequency.setValueAtTime(freq*0.5, t);
+    o.frequency.exponentialRampToValueAtTime(freq*0.3, t+1.1+Math.random()*0.3);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.07 + Math.random()*0.03, t+0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.5;
+    o.connect(g); g.connect(panner); panner.connect(bedBus);
+    if(echoDelay) panner.connect(echoDelay);
+    o.start(t); o.stop(t+dur+0.1);
+    sfxClose(dur+0.15);
+  }
+
+  // 3-5 irregular drips scattered over ~1.5s
+  function playSfxDripCluster(){
+    sfxOpen();
+    const t = ctx.currentTime;
+    const count = 3 + Math.floor(Math.random()*3);
+    let maxEnd = 0;
+    for(let i=0;i<count;i++){
+      const start = t + Math.random()*1.3;
+      const freq = 450 + Math.random()*500;
+      const dur = 0.5 + Math.random()*0.3;
+      const o = ctx.createOscillator(); o.type='sine';
+      o.frequency.setValueAtTime(freq*0.5, start);
+      o.frequency.exponentialRampToValueAtTime(freq*0.3, start+0.5);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.linearRampToValueAtTime(0.05 + Math.random()*0.03, start+0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, start+dur);
+      const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.6;
+      o.connect(g); g.connect(panner); panner.connect(bedBus);
+      if(echoDelay) panner.connect(echoDelay);
+      o.start(start); o.stop(start+dur+0.1);
+      maxEnd = Math.max(maxEnd, (start-t)+dur+0.1);
+    }
+    sfxClose(maxEnd+0.1);
+  }
+
+  // distant, dull splash: noise through a soft lowpass
+  function playSfxSplash(){
+    sfxOpen();
+    const t = ctx.currentTime;
+    const dur = 1.0 + Math.random()*0.5;
+    const src = ctx.createBufferSource(); src.buffer = makeNoiseBuffer(dur);
+    const lp = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = 500+Math.random()*300; lp.Q.value = 0.7;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.08 + Math.random()*0.02, t+0.08);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.5;
+    src.connect(lp); lp.connect(g); g.connect(panner); panner.connect(bedBus);
+    if(echoDelay) panner.connect(echoDelay);
+    src.start(t); src.stop(t+dur+0.05);
+    sfxClose(dur+0.15);
+  }
+
+  // -- Impact --
+
+  // deep boom: low sine sweep with a short noise thump on the attack, long decay
+  function playSfxBoom(){
+    sfxOpen();
+    const t = ctx.currentTime;
+    const freq = 45 + Math.random()*15;
+    const dur = 3.2 + Math.random()*0.8;
+    const o = ctx.createOscillator(); o.type='sine';
+    o.frequency.setValueAtTime(freq*1.6, t);
+    o.frequency.exponentialRampToValueAtTime(freq*0.6, t+0.4);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.11 + Math.random()*0.01, t+0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    const nsrc = ctx.createBufferSource(); nsrc.buffer = makeNoiseBuffer(0.2);
+    const nlp = ctx.createBiquadFilter(); nlp.type='lowpass'; nlp.frequency.value = 200;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.08, t);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t+0.15);
+    const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.3;
+    o.connect(g); g.connect(panner);
+    nsrc.connect(nlp); nlp.connect(ng); ng.connect(panner);
+    panner.connect(bedBus);
+    if(echoDelay) panner.connect(echoDelay);
+    o.start(t); o.stop(t+dur+0.1);
+    nsrc.start(t); nsrc.stop(t+0.25);
+    sfxClose(dur+0.15);
+  }
+
+  // falling stones: a scatter of short bandpassed noise hits
+  function playSfxRubble(){
+    sfxOpen();
+    const t = ctx.currentTime;
+    const count = 5 + Math.floor(Math.random()*4);
+    let maxEnd = 0;
+    for(let i=0;i<count;i++){
+      const start = t + Math.random()*1.6;
+      const dur = 0.08 + Math.random()*0.1;
+      const src = ctx.createBufferSource(); src.buffer = makeNoiseBuffer(dur);
+      const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value = 200+Math.random()*400; bp.Q.value = 1.5;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.linearRampToValueAtTime(0.05 + Math.random()*0.03, start+0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, start+dur);
+      const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.8;
+      src.connect(bp); bp.connect(g); g.connect(panner); panner.connect(bedBus);
+      if(echoDelay) panner.connect(echoDelay);
+      src.start(start); src.stop(start+dur+0.05);
+      maxEnd = Math.max(maxEnd, (start-t)+dur+0.05);
+    }
+    sfxClose(maxEnd+0.1);
+  }
+
+  // distant door/rock slam: sharp noise+low-tone attack, then a long tail
+  function playSfxSlam(){
+    sfxOpen();
+    const t = ctx.currentTime;
+    const dur = 2.2 + Math.random()*0.6;
+    const src = ctx.createBufferSource(); src.buffer = makeNoiseBuffer(0.15);
+    const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value = 150+Math.random()*100; bp.Q.value = 2;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.1, t);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t+0.12);
+    const o = ctx.createOscillator(); o.type='sine'; o.frequency.value = 55+Math.random()*15;
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, t);
+    og.gain.linearRampToValueAtTime(0.09, t+0.02);
+    og.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.4;
+    src.connect(bp); bp.connect(ng); ng.connect(panner);
+    o.connect(og); og.connect(panner);
+    panner.connect(bedBus);
+    if(echoDelay) panner.connect(echoDelay);
+    src.start(t); src.stop(t+0.2);
+    o.start(t); o.stop(t+dur+0.1);
+    sfxClose(dur+0.15);
+  }
+
+  // -- Metal --
+
+  // noise burst through a swept high-Q bandpass (self-picking version of playCaveScrape)
+  function playSfxScrape(){
+    sfxOpen();
+    const t = ctx.currentTime;
+    const dur = 0.8 + Math.random()*0.6;
+    const src = ctx.createBufferSource(); src.buffer = makeNoiseBuffer(dur);
+    const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.Q.value = 16+Math.random()*6;
+    const startF = 800+Math.random()*600, endF = 2500+Math.random()*1500;
+    bp.frequency.setValueAtTime(startF, t);
+    bp.frequency.exponentialRampToValueAtTime(endF, t+dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.06 + Math.random()*0.02, t+0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.7;
+    src.connect(bp); bp.connect(g); g.connect(panner); panner.connect(bedBus);
+    if(echoDelay) panner.connect(echoDelay);
+    src.start(t); src.stop(t+dur+0.05);
+    sfxClose(dur+0.15);
+  }
+
+  // irregular metallic rattle: several short high-Q noise hits at random times
+  function playSfxChains(){
+    sfxOpen();
+    const t = ctx.currentTime;
+    const count = 6 + Math.floor(Math.random()*5);
+    let maxEnd = 0;
+    for(let i=0;i<count;i++){
+      const start = t + Math.random()*1.4;
+      const dur = 0.06 + Math.random()*0.08;
+      const src = ctx.createBufferSource(); src.buffer = makeNoiseBuffer(dur);
+      const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value = 1500+Math.random()*2500; bp.Q.value = 8+Math.random()*6;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.linearRampToValueAtTime(0.05 + Math.random()*0.03, start+0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, start+dur);
+      const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.7;
+      src.connect(bp); bp.connect(g); g.connect(panner); panner.connect(bedBus);
+      if(echoDelay) panner.connect(echoDelay);
+      src.start(start); src.stop(start+dur+0.05);
+      maxEnd = Math.max(maxEnd, (start-t)+dur+0.05);
+    }
+    sfxClose(maxEnd+0.1);
+  }
+
+  // inharmonic clang: partials at non-integer ratios so it never resolves into a pitch
+  // (self-picking version of playCaveClang)
+  function playSfxClang(){
+    sfxOpen();
+    const t = ctx.currentTime;
+    const freq = 180 + Math.random()*120;
+    const partials = [1, 1.73, 2.41, 3.19];
+    const dur = 2.0 + Math.random()*1.0;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.07 + Math.random()*0.02, t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.6;
+    g.connect(panner); panner.connect(bedBus);
+    if(echoDelay) panner.connect(echoDelay);
+    partials.forEach((p,i)=>{
+      const o = ctx.createOscillator(); o.type='sine'; o.frequency.value = freq*p;
+      const pg = ctx.createGain(); pg.gain.value = i===0 ? 1 : 0.5/i;
+      o.connect(pg); pg.connect(g);
+      o.start(t); o.stop(t+dur+0.1);
+    });
+    sfxClose(dur+0.15);
+  }
+
+  // -- Creature --
+
+  // filtered noise exhale, slow swell in then a fade
+  function playSfxBreath(){
+    sfxOpen();
+    const t = ctx.currentTime;
+    const dur = 1.6 + Math.random()*0.8;
+    const src = ctx.createBufferSource(); src.buffer = makeNoiseBuffer(dur);
+    const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value = 500+Math.random()*300; bp.Q.value = 1.2;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.06 + Math.random()*0.02, t+dur*0.35);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.4;
+    src.connect(bp); bp.connect(g); g.connect(panner); panner.connect(bedBus);
+    if(echoDelay) panner.connect(echoDelay);
+    src.start(t); src.stop(t+dur+0.05);
+    sfxClose(dur+0.15);
+  }
+
+  // low, amplitude-modulated growl: a rough sawtooth tremolo'd fast enough to buzz
+  function playSfxGrowl(){
+    sfxOpen();
+    const t = ctx.currentTime;
+    const dur = 2.0 + Math.random()*1.0;
+    const freq = 70 + Math.random()*30;
+    const o = ctx.createOscillator(); o.type='sawtooth'; o.frequency.value = freq;
+    const amGain = ctx.createGain(); amGain.gain.value = 0.5;
+    const amLfo = ctx.createOscillator(); amLfo.type='sine'; amLfo.frequency.value = 28 + Math.random()*14;
+    const amDepth = ctx.createGain(); amDepth.gain.value = 0.5;
+    amLfo.connect(amDepth); amDepth.connect(amGain.gain);
+    const lp = ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = 400;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.09 + Math.random()*0.02, t+0.15);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.3;
+    o.connect(amGain); amGain.connect(lp); lp.connect(g); g.connect(panner); panner.connect(bedBus);
+    if(echoDelay) panner.connect(echoDelay);
+    o.start(t); o.stop(t+dur+0.1);
+    amLfo.start(t); amLfo.stop(t+dur+0.1);
+    sfxClose(dur+0.15);
+  }
+
+  // distant rising-then-falling cry
+  function playSfxWail(){
+    sfxOpen();
+    const t = ctx.currentTime;
+    const dur = 3.0 + Math.random()*1.2;
+    const baseFreq = 300 + Math.random()*150;
+    const o = ctx.createOscillator(); o.type='sine';
+    o.frequency.setValueAtTime(baseFreq, t);
+    o.frequency.linearRampToValueAtTime(baseFreq*2.2, t+dur*0.45);
+    o.frequency.linearRampToValueAtTime(baseFreq*0.8, t+dur);
+    const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value = baseFreq*1.5; bp.Q.value = 2;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.07 + Math.random()*0.02, t+dur*0.4);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.6;
+    o.connect(bp); bp.connect(g); g.connect(panner); panner.connect(bedBus);
+    if(echoDelay) panner.connect(echoDelay);
+    o.start(t); o.stop(t+dur+0.1);
+    sfxClose(dur+0.15);
+  }
+
+  // formant-filtered noise, hard-panned (self-picking version of playCaveWhisper)
+  function playSfxWhisper(){
+    sfxOpen();
+    const t = ctx.currentTime;
+    const dur = 0.5 + Math.random()*0.4;
+    const src = ctx.createBufferSource(); src.buffer = makeNoiseBuffer(dur);
+    const bp1 = ctx.createBiquadFilter(); bp1.type='bandpass'; bp1.frequency.value = 700+Math.random()*400; bp1.Q.value = 6;
+    const bp2 = ctx.createBiquadFilter(); bp2.type='bandpass'; bp2.frequency.value = 1800+Math.random()*800; bp2.Q.value = 8;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.05 + Math.random()*0.02, t+0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    const panner = ctx.createStereoPanner(); panner.pan.value = Math.random()<0.5 ? -0.9 : 0.9;
+    src.connect(bp1); src.connect(bp2); bp1.connect(g); bp2.connect(g); g.connect(panner); panner.connect(bedBus);
+    if(echoDelay) panner.connect(echoDelay);
+    src.start(t); src.stop(t+dur+0.05);
+    sfxClose(dur+0.15);
+  }
+
+  // fast irregular clicks, like claws or insects
+  function playSfxSkitter(){
+    sfxOpen();
+    const t = ctx.currentTime;
+    const count = 8 + Math.floor(Math.random()*7);
+    let maxEnd = 0;
+    for(let i=0;i<count;i++){
+      const start = t + Math.random()*0.9;
+      const dur = 0.02 + Math.random()*0.03;
+      const src = ctx.createBufferSource(); src.buffer = makeNoiseBuffer(dur);
+      const hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value = 2500+Math.random()*3000;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.linearRampToValueAtTime(0.04 + Math.random()*0.03, start+0.003);
+      g.gain.exponentialRampToValueAtTime(0.0001, start+dur);
+      const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.85;
+      src.connect(hp); hp.connect(g); g.connect(panner); panner.connect(bedBus);
+      if(echoDelay) panner.connect(echoDelay);
+      src.start(start); src.stop(start+dur+0.02);
+      maxEnd = Math.max(maxEnd, (start-t)+dur+0.02);
+    }
+    sfxClose(maxEnd+0.1);
+  }
+
+  // -- Dread --
+
+  // builds over 3-5s (noise through a rising swept bandpass) then cuts abruptly
+  function playSfxRiser(){
+    sfxOpen();
+    const t = ctx.currentTime;
+    const dur = 3 + Math.random()*2;
+    const src = ctx.createBufferSource(); src.buffer = makeNoiseBuffer(dur);
+    const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.Q.value = 3;
+    bp.frequency.setValueAtTime(150, t);
+    bp.frequency.exponentialRampToValueAtTime(3500+Math.random()*1500, t+dur*0.95);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.1 + Math.random()*0.02, t+dur*0.92);
+    g.gain.setTargetAtTime(0.0001, t+dur*0.92, 0.02); // abrupt cutoff, not instant (avoids a click)
+    const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.3;
+    src.connect(bp); bp.connect(g); g.connect(panner); panner.connect(bedBus);
+    if(echoDelay) panner.connect(echoDelay);
+    src.start(t); src.stop(t+dur+0.1);
+    sfxClose(dur+0.2);
+  }
+
+  // grows from nothing (inharmonic tone stack), stops dead
+  function playSfxReverseSwell(){
+    sfxOpen();
+    const t = ctx.currentTime;
+    const dur = 2.5 + Math.random()*1.5;
+    const freq = 90 + Math.random()*40;
+    const partials = [1, 2, 3.01, 4.02];
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.08 + Math.random()*0.02, t+dur*0.9);
+    g.gain.setTargetAtTime(0.0001, t+dur*0.9, 0.015); // stops dead, not instant (avoids a click)
+    const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.4;
+    g.connect(panner); panner.connect(bedBus);
+    if(echoDelay) panner.connect(echoDelay);
+    partials.forEach((p,i)=>{
+      const o = ctx.createOscillator(); o.type='sine'; o.frequency.value = freq*p;
+      const pg = ctx.createGain(); pg.gain.value = i===0 ? 1 : 0.4/i;
+      o.connect(pg); pg.connect(g);
+      o.start(t); o.stop(t+dur+0.1);
+    });
+    sfxClose(dur+0.2);
+  }
+
+  // very low thump, felt more than heard
+  function playSfxSubHit(){
+    sfxOpen();
+    const t = ctx.currentTime;
+    const freq = 38 + Math.random()*10;
+    const dur = 1.2 + Math.random()*0.5;
+    const o = ctx.createOscillator(); o.type='sine';
+    o.frequency.setValueAtTime(freq*1.3, t);
+    o.frequency.exponentialRampToValueAtTime(freq*0.7, t+0.3);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.1 + Math.random()*0.02, t+0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.15;
+    o.connect(g); g.connect(panner); panner.connect(bedBus);
+    if(echoDelay) panner.connect(echoDelay);
+    o.start(t); o.stop(t+dur+0.1);
+    sfxClose(dur+0.15);
+  }
+
+  // two dissonant (tritone) tones, sharp attack, long tail
+  function playSfxTritoneStab(){
+    sfxOpen();
+    const t = ctx.currentTime;
+    const freq = 180 + Math.random()*60;
+    const dur = 3.5 + Math.random()*1.5;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.08 + Math.random()*0.02, t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.3;
+    g.connect(panner); panner.connect(bedBus);
+    if(echoDelay) panner.connect(echoDelay);
+    [1, 1.4142].forEach((ratio,i)=>{
+      const o = ctx.createOscillator(); o.type='sawtooth'; o.frequency.value = freq*ratio;
+      const pg = ctx.createGain(); pg.gain.value = i===0 ? 1 : 0.8;
+      o.connect(pg); pg.connect(g);
+      o.start(t); o.stop(t+dur+0.1);
+    });
+    sfxClose(dur+0.15);
+  }
+
+  // Registry the soundboard UI iterates to build its button grid. group is one of
+  // Water/Impact/Metal/Creature/Dread; play() takes no arguments.
+  const CREEPY_SOUNDS = [
+    { id: 'drip',         label: 'Drip',          group: 'Water',    play: () => playSfxDrip() },
+    { id: 'dripCluster',  label: 'Drip Cluster',  group: 'Water',    play: () => playSfxDripCluster() },
+    { id: 'splash',       label: 'Splash',        group: 'Water',    play: () => playSfxSplash() },
+    { id: 'boom',         label: 'Boom',          group: 'Impact',   play: () => playSfxBoom() },
+    { id: 'rubble',       label: 'Rubble',        group: 'Impact',   play: () => playSfxRubble() },
+    { id: 'slam',         label: 'Slam',          group: 'Impact',   play: () => playSfxSlam() },
+    { id: 'scrape',       label: 'Scrape',        group: 'Metal',    play: () => playSfxScrape() },
+    { id: 'chains',       label: 'Chains',        group: 'Metal',    play: () => playSfxChains() },
+    { id: 'clang',        label: 'Clang',         group: 'Metal',    play: () => playSfxClang() },
+    { id: 'breath',       label: 'Breath',        group: 'Creature', play: () => playSfxBreath() },
+    { id: 'growl',        label: 'Growl',         group: 'Creature', play: () => playSfxGrowl() },
+    { id: 'wail',         label: 'Wail',          group: 'Creature', play: () => playSfxWail() },
+    { id: 'whisper',      label: 'Whisper',       group: 'Creature', play: () => playSfxWhisper() },
+    { id: 'skitter',      label: 'Skitter',       group: 'Creature', play: () => playSfxSkitter() },
+    { id: 'riser',        label: 'Riser',         group: 'Dread',    play: () => playSfxRiser() },
+    { id: 'reverseSwell', label: 'Reverse Swell', group: 'Dread',    play: () => playSfxReverseSwell() },
+    { id: 'subHit',       label: 'Sub Hit',       group: 'Dread',    play: () => playSfxSubHit() },
+    { id: 'tritoneStab',  label: 'Tritone Stab',  group: 'Dread',    play: () => playSfxTritoneStab() },
+  ];
+
   // fast ascending shimmer cascade
   function playAuroraAccent(key, chordDeg){
     const t = ctx.currentTime;
@@ -3409,8 +3981,13 @@
     return bytes < 1024*1024 ? Math.round(bytes/1024)+' KB' : (bytes/(1024*1024)).toFixed(1)+' MB';
   }
   function updateRecordStatus(){
+    // Mirrors the same elapsed/size text onto both the instrument's #recStatus and the
+    // soundboard's #sbRecStatus (see toggleRecord() below for the equivalent button/label
+    // mirroring) — null-checked so either view can be absent from the DOM state without
+    // breaking the other.
     const el = document.getElementById('recStatus');
-    if(!el) return;
+    const sbEl = document.getElementById('sbRecStatus');
+    if(!el && !sbEl) return;
     if(recordState!=='recording'){ return; }
     const elapsedMs = performance.now() - recordStartMs;
     const stemsNote = state.stemsOn ? ' (3 stems)' : '';
@@ -3418,13 +3995,16 @@
       const loopSecs = Number(state.loopLenSecs);
       const totalSecs = loopSecs + LOOP_OVERLAP_SEC;
       const elapsedSecs = Math.min(totalSecs, Math.floor(elapsedMs/1000));
-      el.textContent = `capturing ${loopSecs}s loop… ${elapsedSecs}/${totalSecs}s · ~${formatBytes(estimateRecordingBytes())}${stemsNote}`;
-      el.classList.remove('warn');
+      const text = `capturing ${loopSecs}s loop… ${elapsedSecs}/${totalSecs}s · ~${formatBytes(estimateRecordingBytes())}${stemsNote}`;
+      if(el){ el.textContent = text; el.classList.remove('warn'); }
+      if(sbEl){ sbEl.textContent = text; sbEl.classList.remove('warn'); }
       return;
     }
     const m = Math.floor(elapsedMs/60000), s = Math.floor((elapsedMs%60000)/1000);
-    el.textContent = `${m}:${String(s).padStart(2,'0')} · ~${formatBytes(estimateRecordingBytes())}${stemsNote}`;
-    el.classList.toggle('warn', elapsedMs >= REC_WARN_MS);
+    const text = `${m}:${String(s).padStart(2,'0')} · ~${formatBytes(estimateRecordingBytes())}${stemsNote}`;
+    const warn = elapsedMs >= REC_WARN_MS;
+    if(el){ el.textContent = text; el.classList.toggle('warn', warn); }
+    if(sbEl){ sbEl.textContent = text; sbEl.classList.toggle('warn', warn); }
   }
 
   // ---------- MIDI export: what you actually played, as a real .mid file ----------
@@ -3484,6 +4064,12 @@
     const statusEl = document.getElementById('recStatus');
     const loopBtn = document.getElementById('loopCaptureBtn');
     const loopLenSel = document.getElementById('loopLen');
+    // Soundboard's compact record control (see the soundboard view section further
+    // down) — null-checked throughout so this function works identically whether or
+    // not that view's markup is present.
+    const sbBtn = document.getElementById('sbRecordBtn');
+    const sbLabel = document.getElementById('sbRecordLabel');
+    const sbStatusEl = document.getElementById('sbRecStatus');
 
     if(recordState==='idle'){
       leftChunks = []; rightChunks = [];
@@ -3500,6 +4086,8 @@
       // must track the visible label by hand.
       btn.setAttribute('aria-label', 'Stop and save recording');
       btn.setAttribute('aria-pressed', 'true');
+      if(sbBtn){ sbBtn.classList.add('recording'); sbBtn.setAttribute('aria-label', 'Stop and save recording'); sbBtn.setAttribute('aria-pressed', 'true'); }
+      if(sbLabel) sbLabel.textContent = 'stop & save';
       if(stemsChip) stemsChip.disabled = true;
       // An ordinary recording and a loop capture share the same underlying tap/chunk
       // pipeline and recordState, so only one can run at a time.
@@ -3524,7 +4112,10 @@
     label.textContent = 'saving…';
     btn.setAttribute('aria-label', 'Saving recording…');
     btn.setAttribute('aria-pressed', 'false');
+    if(sbBtn){ sbBtn.classList.remove('recording'); sbBtn.disabled = true; sbBtn.setAttribute('aria-label', 'Saving recording…'); sbBtn.setAttribute('aria-pressed', 'false'); }
+    if(sbLabel) sbLabel.textContent = 'saving…';
     if(statusEl){ statusEl.textContent = 'saving…'; statusEl.classList.remove('warn'); }
+    if(sbStatusEl){ sbStatusEl.textContent = 'saving…'; sbStatusEl.classList.remove('warn'); }
 
     const ts = Date.now();
     // Each stem is flattened/encoded/downloaded in turn, yielding periodically, and its
@@ -3550,7 +4141,10 @@
     if(loopLenSel) loopLenSel.disabled = false;
     label.textContent = 'record';
     btn.setAttribute('aria-label', 'Start recording');
+    if(sbBtn){ sbBtn.disabled = false; sbBtn.setAttribute('aria-label', 'Start recording'); }
+    if(sbLabel) sbLabel.textContent = 'record';
     if(statusEl) statusEl.textContent = '';
+    if(sbStatusEl) sbStatusEl.textContent = '';
     recordState = 'idle';
   }
 
@@ -3561,11 +4155,13 @@
   // let the harmony change mid-capture.
   function setLoopCaptureLocks(locked){
     const recordBtn = document.getElementById('recordBtn');
+    const sbRecordBtn = document.getElementById('sbRecordBtn');
     const stemsChip = document.getElementById('chipStems');
     const freezeChip = document.getElementById('chipFreeze');
     const nextChordBtn = document.getElementById('nextChord');
     const blendSelect = document.getElementById('blendBiomeSelect');
     if(recordBtn) recordBtn.disabled = locked;
+    if(sbRecordBtn) sbRecordBtn.disabled = locked;
     if(stemsChip) stemsChip.disabled = locked;
     if(freezeChip) freezeChip.disabled = locked;
     if(nextChordBtn) nextChordBtn.disabled = locked;
@@ -3954,6 +4550,11 @@
   });
   document.getElementById('nextChord').addEventListener('click', advanceChord);
   document.getElementById('recordBtn').addEventListener('click', toggleRecord);
+  // Soundboard's compact record control drives the exact same state machine — see
+  // toggleRecord()/updateRecordStatus() above, which mirror their UI updates onto
+  // #sbRecordBtn/#sbRecordLabel/#sbRecStatus (guarded by null checks) whenever they exist.
+  const sbRecordBtnEl = document.getElementById('sbRecordBtn');
+  if(sbRecordBtnEl) sbRecordBtnEl.addEventListener('click', toggleRecord);
 
   const loopLenSelect = document.getElementById('loopLen');
   loopLenSelect.addEventListener('change', ()=>{
@@ -4007,6 +4608,141 @@
   document.addEventListener('keydown', (e)=>{
     if(e.key==='Escape' && firstRunEl && !firstRunEl.hasAttribute('hidden')) closeFirstRun();
   });
+
+  // ---- soundboard view: a second top-level view, silent until a button is pressed.
+  // Built entirely from the CREEPY_SOUNDS registry defined earlier (each entry already
+  // handles its own audio setup and master-gain gating) — this section only builds the
+  // button grid and the view-switching chrome around it; no synthesis lives here.
+  // The active view is kept under its own localStorage key, same precedent as
+  // FIRST_RUN_KEY above, so a cleared/corrupt driftbed-state can never disturb it. ----
+  const VIEW_KEY = 'driftbed-view';
+  let currentView = 'instrument';
+  const viewTabInstrument = document.getElementById('viewTabInstrument');
+  const viewTabSounds = document.getElementById('viewTabSounds');
+  const instrumentPanelEl = document.getElementById('instrumentPanel');
+  const soundboardPanelEl = document.getElementById('soundboardPanel');
+  const soundboardGrid = document.getElementById('soundboardGrid');
+
+  // One key per registry entry, in registry order: the number row, then the top letter
+  // row — deliberately clear of the melody pads' A S D F G (see MELODY_KEY_MAP below)
+  // so the two views' shortcuts never collide, even though the pad handler is only
+  // suppressed (not unbound) while this view is showing.
+  const SOUND_KEYS = ['1','2','3','4','5','6','7','8','9','q','w','e','r','t','y','u','i','o'];
+  const SOUND_KEY_TO_ENTRY = {};
+
+  function flashSoundBtn(btn){
+    if(!btn) return;
+    btn.classList.add('hit');
+    setTimeout(()=>btn.classList.remove('hit'), 150);
+  }
+
+  // Renders one heading + button grid per group, in the order groups first appear in
+  // CREEPY_SOUNDS (Water, Impact, Metal, Creature, Dread) — iterates the registry rather
+  // than hardcoding buttons, so adding a sound there is all it takes to get one here.
+  function buildSoundboard(){
+    if(!soundboardGrid) return;
+    const order = [];
+    const byGroup = {};
+    CREEPY_SOUNDS.forEach((entry, i)=>{
+      if(!byGroup[entry.group]){ byGroup[entry.group] = []; order.push(entry.group); }
+      byGroup[entry.group].push({ entry, key: SOUND_KEYS[i] || '' });
+    });
+    order.forEach(groupName=>{
+      const groupEl = document.createElement('div');
+      groupEl.className = 'sb-group';
+      const heading = document.createElement('div');
+      heading.className = 'sb-group-heading';
+      heading.textContent = groupName;
+      groupEl.appendChild(heading);
+      const grid = document.createElement('div');
+      grid.className = 'sb-grid';
+      byGroup[groupName].forEach(({ entry, key })=>{
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'sound-btn';
+        btn.id = 'sound-' + entry.id;
+        btn.setAttribute('aria-label', entry.label + (key ? (', key ' + key.toUpperCase()) : ''));
+        const labelSpan = document.createElement('span');
+        labelSpan.className = 'sound-btn-label';
+        labelSpan.textContent = entry.label;
+        btn.appendChild(labelSpan);
+        if(key){
+          const keySpan = document.createElement('span');
+          keySpan.className = 'key';
+          keySpan.textContent = key.toUpperCase();
+          btn.appendChild(keySpan);
+          SOUND_KEY_TO_ENTRY[key] = { entry, btn };
+        }
+        btn.addEventListener('click', ()=>{
+          entry.play();
+          flashSoundBtn(btn);
+        });
+        grid.appendChild(btn);
+      });
+      groupEl.appendChild(grid);
+      soundboardGrid.appendChild(groupEl);
+    });
+  }
+  buildSoundboard();
+
+  // Sound shortcuts only fire while the soundboard is the active view — isTypingTarget
+  // is declared further below but already hoisted, since this listener only runs later
+  // in response to a real keydown, well after the whole script has finished executing.
+  document.addEventListener('keydown', (e)=>{
+    if(currentView!=='sounds') return;
+    if(isTypingTarget(e.target)) return;
+    if(e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+    const hit = SOUND_KEY_TO_ENTRY[e.key.toLowerCase()];
+    if(!hit) return;
+    e.preventDefault();
+    hit.entry.play();
+    flashSoundBtn(hit.btn);
+  });
+
+  function getSavedView(){
+    try{ return localStorage.getItem(VIEW_KEY)==='sounds' ? 'sounds' : 'instrument'; }
+    catch(e){ return 'instrument'; }
+  }
+  function setView(view){
+    const toSounds = view==='sounds';
+    // Entering the soundboard must be genuinely silent. Everything the ambient engine
+    // makes — pads, chord loop, wind, dread bed — is routed through masterGain, and
+    // stopPlaying() (defined above) ramps that to 0 and tears the chord voices down;
+    // nothing else needs to change for silence. The only thing that makes sound in this
+    // view from here on is a button press, via that entry's own play().
+    if(toSounds && state.playing) stopPlaying();
+    currentView = toSounds ? 'sounds' : 'instrument';
+    if(viewTabInstrument){
+      viewTabInstrument.classList.toggle('on', !toSounds);
+      viewTabInstrument.setAttribute('aria-selected', String(!toSounds));
+      viewTabInstrument.tabIndex = toSounds ? -1 : 0;
+    }
+    if(viewTabSounds){
+      viewTabSounds.classList.toggle('on', toSounds);
+      viewTabSounds.setAttribute('aria-selected', String(toSounds));
+      viewTabSounds.tabIndex = toSounds ? 0 : -1;
+    }
+    // Switching back to the instrument just reveals it again, exactly as it was left —
+    // this never starts playback on its own.
+    if(instrumentPanelEl) instrumentPanelEl.hidden = toSounds;
+    if(soundboardPanelEl) soundboardPanelEl.hidden = !toSounds;
+    try{ localStorage.setItem(VIEW_KEY, currentView); }catch(e){}
+  }
+  if(viewTabInstrument) viewTabInstrument.addEventListener('click', ()=>setView('instrument'));
+  if(viewTabSounds) viewTabSounds.addEventListener('click', ()=>setView('sounds'));
+  // Roving-tab arrow-key navigation, the standard ARIA tabs pattern.
+  [viewTabInstrument, viewTabSounds].forEach(tab=>{
+    if(!tab) return;
+    tab.addEventListener('keydown', (e)=>{
+      if(e.key!=='ArrowLeft' && e.key!=='ArrowRight') return;
+      e.preventDefault();
+      const other = tab===viewTabInstrument ? viewTabSounds : viewTabInstrument;
+      if(!other) return;
+      setView(other===viewTabSounds ? 'sounds' : 'instrument');
+      other.focus();
+    });
+  });
+  setView(getSavedView());
 
   function wireChip(id, key, onChange){
     const btn = document.getElementById(id);
@@ -4184,6 +4920,7 @@
   }
   document.addEventListener('keydown', (e)=>{
     if(isTypingTarget(e.target)) return; // the presets popover has real text fields now — don't play notes while typing a name
+    if(currentView==='sounds') return; // soundboard is active — A S D F G are free for it to reuse without triggering melody notes underneath
     const k = e.key.toLowerCase();
     if(MELODY_KEY_MAP.hasOwnProperty(k) && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey){
       const i = MELODY_KEY_MAP[k];
