@@ -53,15 +53,15 @@ controls.
 
 ### Single-source rule
 
-**`pwa/index.html` is the only file you ever hand-edit for app changes.** It
+**`index.html` is the only file you ever hand-edit for app changes.** It
 is the entire app — markup, CSS, and JS in one file, served as an installable
-PWA (`pwa/manifest.json`, `pwa/sw.js`, icons alongside it).
+PWA (`manifest.json`, `sw.js`, icons alongside it).
 
 **`driftbed-standalone.html` at the project root is GENERATED — never
 hand-edit it.** It's the same app minus the PWA-install `<head>` block and
 service-worker registration, for dropping into a context where install/SW
 semantics aren't wanted (e.g. attaching as a single file). After any change
-to `pwa/index.html`, regenerate it:
+to `index.html`, regenerate it:
 
 ```
 node tools/build-standalone.mjs
@@ -72,10 +72,10 @@ node tools/build-standalone.mjs
 No build step, so any static file server works:
 
 ```
-cd pwa && python3 -m http.server 8743
+python3 -m http.server 8743
 ```
 
-then open `http://localhost:8743`. Opening `pwa/index.html` directly via
+then open `http://localhost:8743`. Opening `index.html` directly via
 `file://` mostly works too, except the clipboard API (used by "copy link")
 requires a secure context — the presets popover falls back to a selectable
 text field in that case.
@@ -85,13 +85,13 @@ text field in that case.
 Two scripts live in `tools/`:
 
 - **`node tools/build-standalone.mjs`** — regenerates
-  `driftbed-standalone.html` from `pwa/index.html` via a marker-based
+  `driftbed-standalone.html` from `index.html` via a marker-based
   transform (swap the `<title>`, strip the PWA-install head block and the
   service-worker registration script, copy everything else verbatim). Run
-  this after every edit to `pwa/index.html`.
+  this after every edit to `index.html`.
 - **`node tools/check.mjs`** — the gate to pass before considering any change
   to Driftbed done. Must exit 0. It checks three things against
-  `pwa/index.html`:
+  `index.html`:
   1. **JS syntax** — every inline `<script>` block (no `src=`) parses via
      `node --check`.
   2. **DOM id integrity** — every DOM id referenced from JS
@@ -103,7 +103,7 @@ Two scripts live in `tools/`:
 
 ### Orientation to the code
 
-`pwa/index.html` is organized top to bottom as:
+`index.html` is organized top to bottom as:
 
 1. `<head>` — PWA install metadata, then a `<style>` block: CSS custom
    properties (`--accent`, `--panel`, etc., swapped per biome) followed by
@@ -162,10 +162,10 @@ one, the other's files are safe to ignore.
 ## Repository layout
 
 ```
-pwa/index.html            Driftbed — the only file to edit for app changes
-pwa/manifest.json, sw.js  PWA install metadata / service worker
-pwa/icon-*.png            App icons
-driftbed-standalone.html  GENERATED from pwa/index.html — do not hand-edit
+index.html            Driftbed — the only file to edit for app changes
+manifest.json, sw.js         PWA install metadata / service worker
+icon-*.png                            App icons
+driftbed-standalone.html  GENERATED from index.html — do not hand-edit
 tools/build-standalone.mjs  Regenerates driftbed-standalone.html
 tools/check.mjs           Verification gate (must exit 0)
 AGENT_NOTES.md            Operating rules for agents editing this repo

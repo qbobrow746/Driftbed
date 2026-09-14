@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The gate every agent editing this app must pass before claiming success.
 //
-// Runs three checks against pwa/index.html:
+// Runs three checks against index.html:
 //   1. JS syntax     — every inline <script> (no src=) parses via `node --check`.
 //   2. DOM id integrity — every id referenced from JS exists exactly once in the HTML.
 //   3. Standalone in sync — driftbed-standalone.html matches what
@@ -20,7 +20,7 @@ import { buildStandalone } from './build-standalone.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-const SRC_PATH = path.join(ROOT, 'pwa', 'index.html');
+const SRC_PATH = path.join(ROOT, 'index.html');
 const STANDALONE_PATH = path.join(ROOT, 'driftbed-standalone.html');
 
 const results = [];
@@ -142,7 +142,7 @@ function checkStandaloneSync(html) {
   if (actual !== expected) {
     record('3. standalone in sync', false, 'driftbed-standalone.html is stale. Run: node tools/build-standalone.mjs');
   } else {
-    record('3. standalone in sync', true, 'driftbed-standalone.html matches pwa/index.html');
+    record('3. standalone in sync', true, 'driftbed-standalone.html matches index.html');
   }
 }
 
@@ -150,7 +150,7 @@ function checkStandaloneSync(html) {
 // Main
 // ---------------------------------------------------------------------
 function main() {
-  console.log('Driftbed checks — verifying pwa/index.html\n');
+  console.log('Driftbed checks — verifying index.html\n');
 
   const html = readFileSync(SRC_PATH, 'utf8');
 

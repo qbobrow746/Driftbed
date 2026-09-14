@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Generates driftbed-standalone.html from pwa/index.html.
+// Generates driftbed-standalone.html from index.html.
 //
-// pwa/index.html is the single source of truth. This script applies a
+// index.html is the single source of truth. This script applies a
 // deterministic, marker-based transform (never line-number-based, since
-// pwa/index.html's <head>/<body> will keep changing) to produce a
+// index.html's <head>/<body> will keep changing) to produce a
 // stand-alone single-file copy suitable for sharing without the PWA
 // sibling assets (manifest.json, icon-*.png, sw.js).
 //
@@ -20,14 +20,14 @@ import path from 'node:path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-const SRC_PATH = path.join(ROOT, 'pwa', 'index.html');
+const SRC_PATH = path.join(ROOT, 'index.html');
 const OUT_PATH = path.join(ROOT, 'driftbed-standalone.html');
 
 const TITLE_FROM = '<title>Driftbed</title>';
 const TITLE_TO = '<title>Driftbed (standalone)</title>';
 
 // The PWA-only head block is delimited by a matched pair of comments in
-// pwa/index.html. Paired delimiters (rather than matching the last expected tag)
+// index.html. Paired delimiters (rather than matching the last expected tag)
 // mean new PWA metadata can be added inside the block without touching this
 // script, and no tag name can accidentally match early as a substring.
 const PWA_BLOCK_START_MARKER = '<!-- installable app metadata -->';
@@ -43,7 +43,7 @@ export function buildStandalone(src) {
 
   // 1. Title.
   if (!out.includes(TITLE_FROM)) {
-    fail(`title string not found: expected to see ${JSON.stringify(TITLE_FROM)} in pwa/index.html`);
+    fail(`title string not found: expected to see ${JSON.stringify(TITLE_FROM)} in index.html`);
   }
   out = out.replace(TITLE_FROM, TITLE_TO);
 
@@ -62,7 +62,7 @@ export function buildStandalone(src) {
     }
   }
   if (endIdx === -1) {
-    fail(`PWA-install end marker ${JSON.stringify(PWA_BLOCK_END_MARKER)} not found after the start marker — the PWA head block in pwa/index.html must stay wrapped in both comments`);
+    fail(`PWA-install end marker ${JSON.stringify(PWA_BLOCK_END_MARKER)} not found after the start marker — the PWA head block in index.html must stay wrapped in both comments`);
   }
   lines.splice(startIdx, endIdx - startIdx + 1);
   out = lines.join('\n');
@@ -117,7 +117,7 @@ function main() {
 
   if (checkMode) {
     if (isStale) {
-      console.error(`build-standalone --check: STALE — driftbed-standalone.html does not match pwa/index.html.`);
+      console.error(`build-standalone --check: STALE — driftbed-standalone.html does not match index.html.`);
       console.error(`Run: node tools/build-standalone.mjs`);
       process.exit(1);
     } else {

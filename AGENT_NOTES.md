@@ -4,10 +4,10 @@ Read this before touching anything in this repo.
 
 ## Source of truth
 
-- **`pwa/index.html` is the ONLY file you edit for app changes.** It is a
+- **`index.html` is the ONLY file you edit for app changes.** It is a
   single self-contained HTML file (no build step) served as a PWA.
 - **`driftbed-standalone.html` is GENERATED. Never hand-edit it.** After any
-  change to `pwa/index.html`, run:
+  change to `index.html`, run:
 
   ```
   node tools/build-standalone.mjs
@@ -28,7 +28,7 @@ node tools/check.mjs
 and it **must exit 0**. It checks (1) inline `<script>` blocks still parse,
 (2) every DOM id referenced from JS has a matching `id="..."` in the HTML
 (and no duplicate ids), and (3) `driftbed-standalone.html` is in sync with
-`pwa/index.html`. If check 3 fails, run `node tools/build-standalone.mjs`
+`index.html`. If check 3 fails, run `node tools/build-standalone.mjs`
 and re-check.
 
 ## Hard limits
