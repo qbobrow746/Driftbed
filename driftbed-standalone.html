@@ -969,6 +969,7 @@
     <button class="layers-toggle" id="layersToggle" aria-expanded="false" aria-controls="layersRow">layers</button>
     <div class="layers-row" id="layersRow" hidden>
       <button class="chip" id="chipAccents" aria-pressed="true">accents</button>
+      <button class="chip" id="chipPads" aria-pressed="true" aria-label="Pad synth — the musical chord bed" title="The chord pad synth (the musical drone, including any blended second biome). Turn off for a sound-effects-only texture — accents, dread, wind, echo, and anything you play keep working.">pads</button>
       <button class="chip" id="chipWind" aria-pressed="true">wind</button>
       <button class="chip" id="chipEcho" aria-pressed="true">echo</button>
       <button class="chip" id="chipDrift" aria-pressed="true">drift</button>
@@ -1179,6 +1180,9 @@
     // updateDreadLevel()). Defaults on so Cave is hellish out of the box; silent in every
     // other biome regardless of this flag (gated by biome in updateDreadLevel()).
     dreadOn:true,
+    // padsOn: the chord pad synth (main biome + blended second biome) — see applyPadsOn().
+    // Defaults on so nothing changes for existing users/presets/permalinks that predate it.
+    padsOn:true,
     melodyMode:'notes', voice:'soft',
     arpRate:'med', arpPattern:'up',
     blendBiome:'', blendAmount:0, autoBreathe:false,
@@ -1230,7 +1234,7 @@
   function formatKey(v){ return (v>0?'+':'') + v + ' st'; }
 
   // ---------- audio engine ----------
-  let ctx=null, masterGain, limiter, brightness, dryGain, wetGain, convolver, voiceBus, bedBus, melodyBus;
+  let ctx=null, masterGain, limiter, brightness, dryGain, wetGain, convolver, voiceBus, bedBus, melodyBus, padBus;
   // "Tape" character: built once in initAudio() and left permanently inline; toggling only
   // ramps tapeDryGain/tapeWetGain (see applyTapeOn()) so the live graph is never rewired.
   let preMaster, tapeDryGain, tapeWetGain, tapeShaper, tapeWowDelay, tapeHissSource, tapeHissFilter;
@@ -1435,6 +1439,14 @@
     melodyBus = ctx.createGain(); melodyBus.gain.value = 1;
     bedBus.connect(voiceBus);
     melodyBus.connect(voiceBus);
+
+    // padBus: everything spawnChordVoices() spawns for the MAIN biome (not the blended
+    // second biome, which has its own blendGain) routes through here before bedBus, so the
+    // "pads" chip can silence just the chord synth — see applyPadsOn() — by ramping this one
+    // gain rather than tearing voices down, which keeps the chord progression, chord editor
+    // and melody-pad chord-tracking running normally underneath the silence.
+    padBus = ctx.createGain(); padBus.gain.value = 1;
+    padBus.connect(bedBus);
 
     // a light always-on chorus on the bed: two short modulated delays, panned hard L/R
     // and mixed back in quietly — thickens and widens the pad without a dedicated control.
@@ -1728,7 +1740,9 @@
     const group = { gain: ctx.createGain(), oscs:[] };
     group.gain.gain.setValueAtTime(0.0001, now);
     group.gain.gain.linearRampToValueAtTime(1, now + fadeInSecs);
-    group.gain.connect(destBus || bedBus);
+    // Main-biome voices default into padBus (muted by the "pads" chip); the blended
+    // second biome passes blendGain explicitly instead — see applyPadsOn()/applyBlendAmount().
+    group.gain.connect(destBus || padBus);
 
     const transposeCents = state.transpose*100;
 
@@ -1806,7 +1820,21 @@
   // ---------- blend: a second biome's pad drone, mixed in alongside the first ----------
   function applyBlendAmount(v){
     if(!blendGain) return;
-    blendGain.gain.setTargetAtTime(v/100, ctx.currentTime, 0.6);
+    // The blended second biome is pad synth too, so it's silenced along with padBus when
+    // the "pads" chip is off (see applyPadsOn()) — but state.blendAmount itself is left
+    // untouched, so re-enabling pads calls this again and the user's dialed-in blend amount
+    // comes back exactly as it was, rather than jumping to full.
+    const target = state.padsOn ? v/100 : 0;
+    blendGain.gain.setTargetAtTime(target, ctx.currentTime, 0.6);
+  }
+  // ---------- pads: mute/unmute the chord synth (main biome + blended second biome) ----------
+  // Ramps padBus/blendGain rather than stopping voices or skipping spawnChordVoices() calls,
+  // so the chord progression timer, the chord editor, and the melody pads' live chord-
+  // tracking all keep running normally — only the audible output goes away.
+  function applyPadsOn(on){
+    if(!ctx || !padBus) return;
+    padBus.gain.setTargetAtTime(on ? 1 : 0, ctx.currentTime, 0.5);
+    applyBlendAmount(state.blendAmount);
   }
   function playBlendChord(){
     const biome = BIOMES[state.blendBiome];
@@ -3702,6 +3730,7 @@
     out.colorDriftOn = typeof input.colorDriftOn==='boolean' ? input.colorDriftOn : d.colorDriftOn;
     out.audioReactiveOn = typeof input.audioReactiveOn==='boolean' ? input.audioReactiveOn : d.audioReactiveOn;
     out.dreadOn = typeof input.dreadOn==='boolean' ? input.dreadOn : d.dreadOn;
+    out.padsOn = typeof input.padsOn==='boolean' ? input.padsOn : d.padsOn;
     out.melodyMode = ['notes','arp','chord'].includes(input.melodyMode) ? input.melodyMode : d.melodyMode;
     out.voice = ['soft','warm','glass','pad','sub'].includes(input.voice) ? input.voice : d.voice;
     out.arpRate = ['slow','med','fast'].includes(input.arpRate) ? input.arpRate : d.arpRate;
@@ -3817,7 +3846,12 @@
     { id:'factory-glass-drift', name:'Glass Drift', factory:true, state:{ biome:'snow', presence:40, density:15, air:80, warmth:15, intensity:35, transpose:0, autofade:'0', accentsOn:true, windOn:true, echoOn:true, colorDriftOn:true, melodyMode:'arp', voice:'glass', arpRate:'fast', arpPattern:'updown', blendBiome:'', blendAmount:0, autoBreathe:false, chordSevenths:[true,true,true,true,true], stemsOn:false } },
     { id:'factory-fernlight', name:'Fernlight', factory:true, state:{ biome:'oak', presence:38, density:35, air:50, warmth:55, intensity:45, transpose:0, autofade:'0', accentsOn:true, windOn:false, echoOn:true, colorDriftOn:true, melodyMode:'notes', voice:'soft', arpRate:'med', arpPattern:'up', blendBiome:'', blendAmount:0, autoBreathe:true, chordSevenths:[true,true,true,true,true], stemsOn:false } },
     { id:'factory-stone-hush', name:'Stone Hush', factory:true, state:{ biome:'cave', presence:30, density:10, air:15, warmth:75, intensity:15, transpose:-5, autofade:'0', accentsOn:false, windOn:true, echoOn:true, colorDriftOn:false, melodyMode:'arp', voice:'sub', arpRate:'slow', arpPattern:'down', blendBiome:'', blendAmount:0, autoBreathe:false, chordSevenths:[true,true,true,true,true], stemsOn:false } },
-    { id:'factory-skyfall-bloom', name:'Skyfall Bloom', factory:true, state:{ biome:'aurora', presence:55, density:70, air:65, warmth:30, intensity:70, transpose:3, autofade:'0', accentsOn:true, windOn:true, echoOn:true, colorDriftOn:true, melodyMode:'chord', voice:'pad', arpRate:'med', arpPattern:'up', blendBiome:'snow', blendAmount:25, autoBreathe:false, chordSevenths:[true,true,true,true,true], stemsOn:false } }
+    { id:'factory-skyfall-bloom', name:'Skyfall Bloom', factory:true, state:{ biome:'aurora', presence:55, density:70, air:65, warmth:30, intensity:70, transpose:3, autofade:'0', accentsOn:true, windOn:true, echoOn:true, colorDriftOn:true, melodyMode:'chord', voice:'pad', arpRate:'med', arpPattern:'up', blendBiome:'snow', blendAmount:25, autoBreathe:false, chordSevenths:[true,true,true,true,true], stemsOn:false } },
+    // No synth, no wind bed — just Cave's discrete creepy events (drips, groans, scrapes,
+    // clangs, whispers via accents) plus the continuous dread drone, dense enough to carry
+    // the whole texture on their own. Meant to sit under other audio (e.g. a game) as
+    // atmosphere rather than as music — see AGENT_NOTES.md / the "pads" chip above.
+    { id:'factory-black-marrow', name:'Black Marrow', factory:true, state:{ biome:'cave', presence:50, density:85, air:70, warmth:45, intensity:75, transpose:-3, autofade:'0', accentsOn:true, windOn:false, echoOn:true, colorDriftOn:false, dreadOn:true, padsOn:false, melodyMode:'notes', voice:'sub', arpRate:'slow', arpPattern:'down', blendBiome:'', blendAmount:0, autoBreathe:false, chordSevenths:[true,true,true,true,true], stemsOn:false } }
   ];
 
   // Loads a preset/permalink's sound into the live app. Biome changes go through
@@ -3974,6 +4008,7 @@
     });
   }
   wireChip('chipAccents', 'accentsOn', ()=>{});
+  wireChip('chipPads', 'padsOn', ()=>{ if(ctx) applyPadsOn(state.padsOn); });
   wireChip('chipWind', 'windOn', ()=>{ if(ctx) updateNoiseLevel(state.intensity); });
   wireChip('chipEcho', 'echoOn', ()=>{ if(ctx) applyBiomeEcho(BIOMES[state.biome]); });
   wireChip('chipDrift', 'colorDriftOn', ()=>{});
@@ -4417,6 +4452,7 @@
     // for whether the resolved key is a 7-note scale.
 
     syncChip('chipAccents','accentsOn');
+    syncChip('chipPads','padsOn');
     syncChip('chipWind','windOn');
     syncChip('chipEcho','echoOn');
     syncChip('chipDrift','colorDriftOn');
@@ -4458,6 +4494,7 @@
       applyTranspose(state.transpose);
       updateNoiseLevel(state.intensity);
       updateDreadLevel(state.intensity);
+      applyPadsOn(state.padsOn); // also re-derives blendGain via applyBlendAmount()
       applyBlendAmount(state.blendAmount);
       if(biome) applyBiomeEcho(biome); // echoOn may have changed even if the biome didn't
       applyTapeOn(state.tapeOn); // tapeOn may have changed even if playback didn't restart
