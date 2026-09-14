@@ -976,6 +976,7 @@
       <button class="chip" id="chipBreathe" aria-pressed="false">breathe</button>
       <button class="chip" id="chipPerformer" aria-pressed="false" title="Let the instrument perform its own melody, hands-free">auto</button>
       <button class="chip" id="chipTape" aria-pressed="false" aria-label="Tape character — saturation and wow/flutter on the master output" title="Warm saturation plus slow pitch wobble, like a well-loved tape deck">tape</button>
+      <button class="chip" id="chipDread" aria-pressed="true" aria-label="Dread bed — a continuous unsettling drone, audible only in Cave" title="A quiet, unsettling drone layered under the Cave biome (formant breath, sub rumble, tritone shimmer)">dread</button>
     </div>
 
     <footer class="readout">
@@ -1174,6 +1175,10 @@
     // see currentKey() above, which resolves these on top of BIOMES[state.biome].
     keyRoot:'', keyScale:'',
     accentsOn:true, windOn:true, echoOn:true, colorDriftOn:true, audioReactiveOn:true,
+    // dreadOn: the Cave "dread bed" (formant breath + sub rumble + tritone shimmer, see
+    // updateDreadLevel()). Defaults on so Cave is hellish out of the box; silent in every
+    // other biome regardless of this flag (gated by biome in updateDreadLevel()).
+    dreadOn:true,
     melodyMode:'notes', voice:'soft',
     arpRate:'med', arpPattern:'up',
     blendBiome:'', blendAmount:0, autoBreathe:false,
@@ -1260,6 +1265,15 @@
   let loopCaptureFreezeWasOn = false; // freezeOn before capture started, restored once it ends/cancels
   let noiseSource, noiseFilter, noiseGustGain, gustDepth, noiseLevelGain, noisePanner, gustLfo, noisePanLfo;
   let echoDelay, echoFeedback, echoWet;
+  // ---------- Cave "dread bed" (see buildDreadBed()) ----------
+  // Everything below feeds dreadLevelGain, a single master level that sits at 0 unless the
+  // active biome is Cave and the dread chip is on (see updateDreadLevel()) — the nodes
+  // themselves are built once in initAudio() and left running for the life of the page, so
+  // toggling/switching biomes only ever ramps a gain, never connects/disconnects anything.
+  let dreadLevelGain;
+  let dreadFormantSource, dreadFormantBp1, dreadFormantBp2, dreadFormantLfo1, dreadFormantLfo2, dreadFormantSwellLfo;
+  let dreadSubOsc1, dreadSubOsc2, dreadSubSwellLfo;
+  let dreadTritoneOsc1, dreadTritoneOsc2;
   let blendGain, blendChordIndex = 0, blendChordTimer = null, blendActiveVoices = [];
   let chordIndex = 0;
   let chordTimer = null, sparkleTimer = null;
@@ -1310,6 +1324,94 @@
     const data = buf.getChannelData(0);
     for(let i=0;i<len;i++) data[i] = Math.random()*2-1;
     return buf;
+  }
+
+  // ---------- Cave "dread bed" ----------
+  // Three quiet continuous layers, built once and left running for the app's lifetime —
+  // all three sum into dreadLevelGain, which is the ONLY thing that ever changes (see
+  // updateDreadLevel()): 0 in every biome but Cave, so nothing here is ever connected,
+  // disconnected, started, or stopped again after this call. A gain at zero can't click.
+  function buildDreadBed(){
+    dreadLevelGain = ctx.createGain();
+    dreadLevelGain.gain.value = 0;
+    dreadLevelGain.connect(bedBus);
+
+    // -- 1a. formant breath: two parallel high-Q bandpasses on a noise source, each swept by
+    // its own slow, independent LFO so the implied "vowel" never settles, plus a slower
+    // amplitude swell so the whole thing breathes. This is the layer doing the most work —
+    // the ear keeps trying (and failing) to resolve a voice in it.
+    dreadFormantSource = ctx.createBufferSource();
+    dreadFormantSource.buffer = makeNoiseBuffer(4);
+    dreadFormantSource.loop = true;
+
+    dreadFormantBp1 = ctx.createBiquadFilter(); dreadFormantBp1.type = 'bandpass';
+    dreadFormantBp1.frequency.value = 250; dreadFormantBp1.Q.value = 11; // F1 center, sweeps ~180-320Hz
+    dreadFormantBp2 = ctx.createBiquadFilter(); dreadFormantBp2.type = 'bandpass';
+    dreadFormantBp2.frequency.value = 900; dreadFormantBp2.Q.value = 9; // F2 center, sweeps ~700-1100Hz
+
+    dreadFormantLfo1 = ctx.createOscillator(); dreadFormantLfo1.frequency.value = 1/37; // ~37s period
+    const dreadFormantDepth1 = ctx.createGain(); dreadFormantDepth1.gain.value = 70; // +-70Hz -> 180-320
+    dreadFormantLfo1.connect(dreadFormantDepth1); dreadFormantDepth1.connect(dreadFormantBp1.frequency);
+
+    dreadFormantLfo2 = ctx.createOscillator(); dreadFormantLfo2.frequency.value = 1/53; // different rate -> drifts out of phase with F1
+    const dreadFormantDepth2 = ctx.createGain(); dreadFormantDepth2.gain.value = 200; // +-200Hz -> 700-1100
+    dreadFormantLfo2.connect(dreadFormantDepth2); dreadFormantDepth2.connect(dreadFormantBp2.frequency);
+
+    const dreadFormantMix = ctx.createGain(); dreadFormantMix.gain.value = 1;
+    dreadFormantSource.connect(dreadFormantBp1); dreadFormantBp1.connect(dreadFormantMix);
+    dreadFormantSource.connect(dreadFormantBp2); dreadFormantBp2.connect(dreadFormantMix);
+
+    // amplitude swell, ~10s period: gain node parked at half its peak, LFO adds/subtracts
+    // the other half so the layer breathes between silence and its 0.05 peak.
+    const dreadFormantSwell = ctx.createGain(); dreadFormantSwell.gain.value = 0.025;
+    dreadFormantSwellLfo = ctx.createOscillator(); dreadFormantSwellLfo.frequency.value = 1/10;
+    const dreadFormantSwellDepth = ctx.createGain(); dreadFormantSwellDepth.gain.value = 0.025;
+    dreadFormantSwellLfo.connect(dreadFormantSwellDepth); dreadFormantSwellDepth.connect(dreadFormantSwell.gain);
+    dreadFormantMix.connect(dreadFormantSwell);
+    dreadFormantSwell.connect(dreadLevelGain);
+
+    dreadFormantSource.start();
+    dreadFormantLfo1.start();
+    dreadFormantLfo2.start();
+    dreadFormantSwellLfo.start();
+
+    // -- 1b. sub rumble: two sines just below/above 32Hz so they beat slowly against each
+    // other, felt more than heard, with its own slow amplitude wobble. Kept very quiet —
+    // sub energy eats headroom under the limiter.
+    dreadSubOsc1 = ctx.createOscillator(); dreadSubOsc1.type = 'sine'; dreadSubOsc1.frequency.value = 32;
+    dreadSubOsc2 = ctx.createOscillator(); dreadSubOsc2.type = 'sine'; dreadSubOsc2.frequency.value = 32.6; // 0.6Hz beat
+
+    const dreadSubMix = ctx.createGain(); dreadSubMix.gain.value = 1;
+    dreadSubOsc1.connect(dreadSubMix); dreadSubOsc2.connect(dreadSubMix);
+
+    const dreadSubSwell = ctx.createGain(); dreadSubSwell.gain.value = 0.01; // peak 0.02
+    dreadSubSwellLfo = ctx.createOscillator(); dreadSubSwellLfo.frequency.value = 1/17; // slow AM, deliberately off from the formant swell's 10s
+    const dreadSubSwellDepth = ctx.createGain(); dreadSubSwellDepth.gain.value = 0.01;
+    dreadSubSwellLfo.connect(dreadSubSwellDepth); dreadSubSwellDepth.connect(dreadSubSwell.gain);
+    dreadSubMix.connect(dreadSubSwell);
+    dreadSubSwell.connect(dreadLevelGain);
+
+    dreadSubOsc1.start();
+    dreadSubOsc2.start();
+    dreadSubSwellLfo.start();
+
+    // -- 1c. tritone shimmer: two oscillators a tritone above the Cave root (73.416 * 2^(6/12)
+    // = 103.83Hz), sitting two octaves up (~415.3Hz) where it reads as shimmer rather than a
+    // bass note, detuned a few cents apart so they beat slowly. The tritone against the
+    // D-minor pads is the harmonic source of "wrong" — kept very quiet, behind everything.
+    const tritoneBase = 73.416 * Math.pow(2, 6/12) * 4;
+    dreadTritoneOsc1 = ctx.createOscillator(); dreadTritoneOsc1.type = 'sine'; dreadTritoneOsc1.frequency.value = tritoneBase;
+    dreadTritoneOsc2 = ctx.createOscillator(); dreadTritoneOsc2.type = 'sine'; dreadTritoneOsc2.frequency.value = tritoneBase;
+    dreadTritoneOsc2.detune.value = 6; // a few cents apart -> slow beating
+
+    const dreadTritoneMix = ctx.createGain(); dreadTritoneMix.gain.value = 1;
+    dreadTritoneOsc1.connect(dreadTritoneMix); dreadTritoneOsc2.connect(dreadTritoneMix);
+    const dreadTritoneGain = ctx.createGain(); dreadTritoneGain.gain.value = 0.015; // fixed, very quiet peak
+    dreadTritoneMix.connect(dreadTritoneGain);
+    dreadTritoneGain.connect(dreadLevelGain);
+
+    dreadTritoneOsc1.start();
+    dreadTritoneOsc2.start();
   }
 
   function initAudio(){
@@ -1477,6 +1579,8 @@
     noiseSource.start();
     noisePanLfo.start();
 
+    buildDreadBed();
+
     // echo send: accent sounds route into this in parallel with their dry path
     echoDelay = ctx.createDelay(2.0);
     echoFeedback = ctx.createGain();
@@ -1491,6 +1595,7 @@
     applyBiomeNoise(BIOMES[state.biome]);
     applyBiomeEcho(BIOMES[state.biome]);
     updateNoiseLevel(state.intensity);
+    updateDreadLevel(state.intensity);
 
     // second biome, blended in alongside the first — shares the same brightness/reverb/echo chain
     blendGain = ctx.createGain();
@@ -1538,6 +1643,17 @@
     if(!noiseLevelGain) return;
     const lvl = state.windOn ? lerp(0.006, 0.05, v/100) : 0;
     noiseLevelGain.gain.setTargetAtTime(lvl, ctx.currentTime, 1.2);
+  }
+  // Master gate for the whole Cave dread bed (see buildDreadBed()) — 0 unless the active
+  // biome IS Cave and the dread chip is on, so every other biome stays exactly as before.
+  // Intensity maps to how strongly it comes through once gated on: 0.15..1 of each layer's
+  // own fixed peak gain (never fully off within Cave, so the dread bed is always at least
+  // a little present there, per "Default ON, so Cave is hellish out of the box").
+  function updateDreadLevel(v){
+    if(!dreadLevelGain) return;
+    const on = state.dreadOn && state.biome === 'cave';
+    const lvl = on ? lerp(0.15, 1, v/100) : 0;
+    dreadLevelGain.gain.setTargetAtTime(lvl, ctx.currentTime, 1.5);
   }
   function applyBiomeEcho(biome){
     if(!echoDelay) return;
@@ -1983,8 +2099,15 @@
     o.start(t); o.stop(t+0.4);
   }
 
-  // distant resonant water drip
+  // Cave accents: chosen at random each time so the biome stops being predictable. The
+  // water drip is kept as one option among several unsettling ones.
   function playCaveAccent(freq){
+    const variants = [playCaveDrip, playCaveGroan, playCaveScrape, playCaveClang, playCaveWhisper];
+    variants[Math.floor(Math.random()*variants.length)](freq);
+  }
+
+  // distant resonant water drip
+  function playCaveDrip(freq){
     const t = ctx.currentTime;
     const o = ctx.createOscillator(); o.type='sine';
     o.frequency.setValueAtTime(freq*0.5, t);
@@ -1997,6 +2120,91 @@
     o.connect(g); g.connect(panner); panner.connect(bedBus);
     if(echoDelay) panner.connect(echoDelay);
     o.start(t); o.stop(t+2.6);
+  }
+
+  // low tone sweeping downward that BUILDS in volume then cuts off abruptly (reverse
+  // envelope) instead of fading — reads as unnatural, like something inhaling then stopping.
+  function playCaveGroan(freq){
+    const t = ctx.currentTime;
+    const dur = 3 + Math.random()*2;
+    const o = ctx.createOscillator(); o.type='sine';
+    o.frequency.setValueAtTime(freq*0.6, t);
+    o.frequency.exponentialRampToValueAtTime(freq*0.22, t+dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    // reverse envelope: grows for almost the whole duration, then a fast (not instant, to
+    // avoid a hard digital click) collapse — much quicker than any natural release.
+    g.gain.exponentialRampToValueAtTime(0.06 + Math.random()*0.02, t + dur*0.92);
+    g.gain.setTargetAtTime(0.0001, t + dur*0.92, 0.03);
+    const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.5;
+    o.connect(g); g.connect(panner); panner.connect(bedBus);
+    if(echoDelay) panner.connect(echoDelay);
+    o.start(t); o.stop(t+dur+0.3);
+  }
+
+  // metallic scrape: a noise burst through a high-Q bandpass whose center sweeps across it
+  function playCaveScrape(freq){
+    const t = ctx.currentTime;
+    const dur = 0.9 + Math.random()*0.6;
+    const len = Math.floor(ctx.sampleRate*dur);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i] = Math.random()*2-1;
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 18;
+    const startF = freq*6 + Math.random()*200;
+    const endF = freq*14 + Math.random()*400;
+    bp.frequency.setValueAtTime(startF, t);
+    bp.frequency.exponentialRampToValueAtTime(endF, t+dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.05 + Math.random()*0.02, t+0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.7;
+    src.connect(bp); bp.connect(g); g.connect(panner); panner.connect(bedBus);
+    if(echoDelay) panner.connect(echoDelay);
+    src.start(t); src.stop(t+dur+0.05);
+  }
+
+  // inharmonic clang: partials at non-integer ratios so it never resolves into a pitch
+  function playCaveClang(freq){
+    const t = ctx.currentTime;
+    const partials = [1, 1.73, 2.41, 3.19];
+    const dur = 2.2 + Math.random()*1.2;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.055 + Math.random()*0.02, t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.6;
+    g.connect(panner); panner.connect(bedBus);
+    if(echoDelay) panner.connect(echoDelay);
+    partials.forEach((p,i)=>{
+      const o = ctx.createOscillator(); o.type='sine'; o.frequency.value = freq*p*0.7; // pitched low, metallic
+      const pg = ctx.createGain(); pg.gain.value = i===0 ? 1 : 0.5/i;
+      o.connect(pg); pg.connect(g);
+      o.start(t); o.stop(t+dur+0.1);
+    });
+  }
+
+  // short formant-filtered noise burst, hard-panned, very quiet — a whisper with no words
+  function playCaveWhisper(freq){
+    const t = ctx.currentTime;
+    const dur = 0.5 + Math.random()*0.4;
+    const len = Math.floor(ctx.sampleRate*dur);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i] = Math.random()*2-1;
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const bp1 = ctx.createBiquadFilter(); bp1.type='bandpass'; bp1.frequency.value = 700+Math.random()*400; bp1.Q.value = 6;
+    const bp2 = ctx.createBiquadFilter(); bp2.type='bandpass'; bp2.frequency.value = 1800+Math.random()*800; bp2.Q.value = 8;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.04, t+0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    const panner = ctx.createStereoPanner(); panner.pan.value = Math.random()<0.5 ? -0.9 : 0.9; // hard-panned
+    src.connect(bp1); src.connect(bp2); bp1.connect(g); bp2.connect(g); g.connect(panner); panner.connect(bedBus);
+    if(echoDelay) panner.connect(echoDelay);
+    src.start(t); src.stop(t+dur+0.05);
   }
 
   // fast ascending shimmer cascade
@@ -2824,6 +3032,7 @@
       applyBiomeNoise(biome);
       applyBiomeSpace(biome);
       applyBiomeEcho(biome);
+      updateDreadLevel(state.intensity); // leaving Cave silences the dread bed; returning restores it
     }
     currentMotion = biome.motion;
     currentMoteCount = biome.moteCount;
@@ -2904,6 +3113,7 @@
       applyWarmth(state.warmth);
     }
     updateNoiseLevel(v);
+    updateDreadLevel(v);
     if(state.playing) setPresence(state.presence, 2.5);
     else visualPresenceTarget = state.presence/100;
   }
@@ -3491,6 +3701,7 @@
     out.echoOn = typeof input.echoOn==='boolean' ? input.echoOn : d.echoOn;
     out.colorDriftOn = typeof input.colorDriftOn==='boolean' ? input.colorDriftOn : d.colorDriftOn;
     out.audioReactiveOn = typeof input.audioReactiveOn==='boolean' ? input.audioReactiveOn : d.audioReactiveOn;
+    out.dreadOn = typeof input.dreadOn==='boolean' ? input.dreadOn : d.dreadOn;
     out.melodyMode = ['notes','arp','chord'].includes(input.melodyMode) ? input.melodyMode : d.melodyMode;
     out.voice = ['soft','warm','glass','pad','sub'].includes(input.voice) ? input.voice : d.voice;
     out.arpRate = ['slow','med','fast'].includes(input.arpRate) ? input.arpRate : d.arpRate;
@@ -3778,6 +3989,7 @@
     setFreeze(!state.freezeOn);
   });
   wireChip('chipTape', 'tapeOn', ()=>{ if(ctx) applyTapeOn(state.tapeOn); });
+  wireChip('chipDread', 'dreadOn', ()=>{ if(ctx) updateDreadLevel(state.intensity); });
 
   const SEG_KEY_MAP = { mode:'melodyMode', voice:'voice', rate:'arpRate', pattern:'arpPattern' };
   function segDatasetKey(btn){
@@ -4214,6 +4426,7 @@
     syncChip('chipPerformer','performerOn');
     syncChip('chipFreeze','freezeOn');
     syncChip('chipTape','tapeOn');
+    syncChip('chipDread','dreadOn');
     // midiOn never auto-connects (see the "Connect to Web MIDI" wiring) — this just
     // refreshes the popover's status text/button label for the restored preference.
     updateMidiStatusUI();
@@ -4244,6 +4457,7 @@
       applyWarmth(state.warmth);
       applyTranspose(state.transpose);
       updateNoiseLevel(state.intensity);
+      updateDreadLevel(state.intensity);
       applyBlendAmount(state.blendAmount);
       if(biome) applyBiomeEcho(biome); // echoOn may have changed even if the biome didn't
       applyTapeOn(state.tapeOn); // tapeOn may have changed even if playback didn't restart
