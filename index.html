@@ -1127,6 +1127,7 @@
           <span id="sbRecordLabel">record</span>
         </button>
         <span class="rec-status" id="sbRecStatus" aria-live="polite"></span>
+        <button class="chip" id="sbAmbienceChip" aria-pressed="false" title="Let the selected biome's ambient bed play under the sounds. Off by default so each button is just its own sound.">ambience</button>
       </div>
     </div>
     <div class="sb-groups" id="soundboardGrid"></div>
@@ -1783,9 +1784,17 @@
     wetGain.gain.setTargetAtTime(wet, ctx.currentTime, 0.6);
     dryGain.gain.setTargetAtTime(dry, ctx.currentTime, 0.6);
   }
+  // The wind and the Cave dread bed run continuously from initAudio() and are only inaudible
+  // because masterGain sits near zero. Every soundboard hit opens that master, which let the
+  // bed through underneath each sound — the dread bed's tritone shimmer is a sustained 415Hz
+  // tone, so it was literally a note playing behind every button press. The soundboard silences
+  // the bed unless its ambience toggle is on. `var` so it hoists: these level functions are
+  // defined long before the view code further down the file.
+  var sbBedMuted = false;
+  var sbAmbienceOn = false;
   function updateNoiseLevel(v){
     if(!noiseLevelGain) return;
-    const lvl = state.windOn ? lerp(0.006, 0.05, v/100) : 0;
+    const lvl = (state.windOn && !sbBedMuted) ? lerp(0.006, 0.05, v/100) : 0;
     noiseLevelGain.gain.setTargetAtTime(lvl, ctx.currentTime, 1.2);
   }
   // Master gate for the whole Cave dread bed (see buildDreadBed()) — 0 unless the active
@@ -1795,7 +1804,7 @@
   // a little present there, per "Default ON, so Cave is hellish out of the box").
   function updateDreadLevel(v){
     if(!dreadLevelGain) return;
-    const on = state.dreadOn && state.biome === 'cave';
+    const on = state.dreadOn && state.biome === 'cave' && !sbBedMuted;
     const lvl = on ? lerp(0.15, 1, v/100) : 0;
     dreadLevelGain.gain.setTargetAtTime(lvl, ctx.currentTime, 1.5);
   }
@@ -2396,7 +2405,7 @@
     o.frequency.exponentialRampToValueAtTime(freq*0.3, t+1.1+Math.random()*0.3);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(0.07 + Math.random()*0.03, t+0.015);
+    g.gain.linearRampToValueAtTime(0.16 + Math.random()*0.04, t+0.015);
     g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
     const panner = ctx.createStereoPanner(); panner.pan.value = (Math.random()*2-1)*0.5;
     o.connect(g); g.connect(panner); panner.connect(bedBus);
@@ -2675,9 +2684,11 @@
     const bp2 = ctx.createBiquadFilter(); bp2.type='bandpass'; bp2.frequency.value = 1800+Math.random()*800; bp2.Q.value = 8;
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(0.05 + Math.random()*0.02, t+0.03);
+    g.gain.linearRampToValueAtTime(0.30 + Math.random()*0.08, t+0.03);
     g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
-    const panner = ctx.createStereoPanner(); panner.pan.value = Math.random()<0.5 ? -0.9 : 0.9;
+    // Not hard-panned: at ±0.9 almost all of it sat in one ear, which read as "too quiet" as
+    // much as the gain did. ±0.65 keeps the over-your-shoulder placement but is audible in both.
+    const panner = ctx.createStereoPanner(); panner.pan.value = Math.random()<0.5 ? -0.65 : 0.65;
     src.connect(bp1); src.connect(bp2); bp1.connect(g); bp2.connect(g); g.connect(panner); panner.connect(bedBus);
     if(echoDelay) panner.connect(echoDelay);
     src.start(t); src.stop(t+dur+0.05);
@@ -4616,6 +4627,11 @@
   // The active view is kept under its own localStorage key, same precedent as
   // FIRST_RUN_KEY above, so a cleared/corrupt driftbed-state can never disturb it. ----
   const VIEW_KEY = 'driftbed-view';
+  // Whether the biome's ambient bed is allowed to play under the soundboard. Off by default —
+  // the point of the board is that a button gives you just that sound. Kept in its own
+  // localStorage key rather than driftbed-state so it can't disturb a saved patch.
+  const SB_AMBIENCE_KEY = 'driftbed-sb-ambience';
+  try{ sbAmbienceOn = localStorage.getItem(SB_AMBIENCE_KEY)==='1'; }catch(e){}
   let currentView = 'instrument';
   const viewTabInstrument = document.getElementById('viewTabInstrument');
   const viewTabSounds = document.getElementById('viewTabSounds');
@@ -4712,6 +4728,11 @@
     // view from here on is a button press, via that entry's own play().
     if(toSounds && state.playing) stopPlaying();
     currentView = toSounds ? 'sounds' : 'instrument';
+    // stopPlaying() alone is not enough: the wind and the Cave dread bed are continuous and
+    // only silent because masterGain is near zero, but every soundboard hit opens that master
+    // to make itself audible, which let the bed through under each sound. Gate them here too.
+    sbBedMuted = toSounds && !sbAmbienceOn;
+    if(ctx){ updateNoiseLevel(state.intensity); updateDreadLevel(state.intensity); }
     if(viewTabInstrument){
       viewTabInstrument.classList.toggle('on', !toSounds);
       viewTabInstrument.setAttribute('aria-selected', String(!toSounds));
@@ -4728,6 +4749,20 @@
     if(soundboardPanelEl) soundboardPanelEl.hidden = !toSounds;
     try{ localStorage.setItem(VIEW_KEY, currentView); }catch(e){}
   }
+  const sbAmbienceChip = document.getElementById('sbAmbienceChip');
+  function syncSbAmbienceChip(){
+    if(!sbAmbienceChip) return;
+    sbAmbienceChip.classList.toggle('on', sbAmbienceOn);
+    sbAmbienceChip.setAttribute('aria-pressed', String(sbAmbienceOn));
+  }
+  if(sbAmbienceChip) sbAmbienceChip.addEventListener('click', ()=>{
+    sbAmbienceOn = !sbAmbienceOn;
+    syncSbAmbienceChip();
+    try{ localStorage.setItem(SB_AMBIENCE_KEY, sbAmbienceOn ? '1' : '0'); }catch(e){}
+    sbBedMuted = currentView==='sounds' && !sbAmbienceOn;
+    if(ctx){ updateNoiseLevel(state.intensity); updateDreadLevel(state.intensity); }
+  });
+  syncSbAmbienceChip();
   if(viewTabInstrument) viewTabInstrument.addEventListener('click', ()=>setView('instrument'));
   if(viewTabSounds) viewTabSounds.addEventListener('click', ()=>setView('sounds'));
   // Roving-tab arrow-key navigation, the standard ARIA tabs pattern.
