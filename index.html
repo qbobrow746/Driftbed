@@ -523,7 +523,17 @@
      lives in the left column, so the default anchored `left:100%` has the whole right
      column's width to open into and stays on screen. */
   @media (max-width: 900px){
-    .popover{ position:fixed; left:50%; top:auto; bottom:1.5rem; margin-left:0; transform:translateX(-50%); width:min(16rem,88vw); }
+    /* NOT position:fixed. .panel sets backdrop-filter, which makes it the containing block for
+       fixed descendants, so a "viewport bottom sheet" was really pinned to the bottom of a panel
+       that is far taller than a phone screen — measured at top:1122 in an 800px-tall viewport,
+       i.e. entirely off screen, so tapping a tab looked like it did nothing at all. Anchoring
+       just below the tab's own row keeps it beside the control that opened it and scrolls with
+       the panel, so it is visible whenever its tab is. */
+    .popover{
+      position:absolute; top:100%; left:0; right:auto; bottom:auto;
+      margin-left:0; margin-top:var(--sp-2); transform:none;
+      width:min(18rem, calc(100vw - 3rem));
+    }
   }
 
   /* The melody block sits low in its column, so its two popovers would grow down past the
@@ -2187,7 +2197,11 @@
     const maxGap = lerp(88, 9, state.density/100);
     const delay = (minGap + Math.random()*(maxGap-minGap)) * 1000;
     sparkleTimer = setTimeout(()=>{
-      if(state.playing) playSparkle();
+      // Stop the chain when playback has stopped instead of rescheduling forever. It used to
+      // re-arm unconditionally, so the chain outlived stopPlaying() and a second Play started
+      // a second chain on top of it — accents permanently got faster with every Play/Stop cycle.
+      if(!state.playing){ sparkleTimer = null; return; }
+      playSparkle();
       scheduleSparkle();
     }, delay);
   }
@@ -3499,12 +3513,19 @@
         scheduleLooperCycle();
       }
     } else {
-      looperState = 'idle';
-      clearLooperTimers();
-      for(let i=0;i<5;i++) stopMelodyNote(i);
-      looperEvents = [];
+      stopLooper();
     }
     setLooperUI();
+  }
+  // Also called when leaving for the soundboard: the loop's scheduled callbacks keep firing
+  // startMelodyNote regardless of view, and those re-open masterGain, so a running phrase loop
+  // would go on playing underneath a view that promises silence.
+  function stopLooper(){
+    looperState = 'idle';
+    clearLooperTimers();
+    for(let i=0;i<5;i++) stopMelodyNote(i);
+    looperEvents = [];
+    setLooperUI(); // callers other than toggleLooper rely on this to leave the button honest
   }
 
   // ---------- generative performer: plays the melody pads by itself ----------
@@ -3684,6 +3705,12 @@
     if(ctx.state==='suspended') ctx.resume();
     state.playing = true;
     chordIndex = 0;
+    // Tear down any chain still alive from a previous Play before arming new ones. Both the
+    // chord timer and the sparkle chain re-arm themselves, and stopPlaying() only cleared them
+    // on a 5.8s delay — so pressing Play again inside that window orphaned the old chain, which
+    // kept advancing chords and firing accents for the rest of the session.
+    if(chordTimer){ clearTimeout(chordTimer); chordTimer = null; chordTimerFireAt = null; }
+    if(sparkleTimer){ clearTimeout(sparkleTimer); sparkleTimer = null; }
     playCurrentChord();
     scheduleNextChord();
     scheduleSparkle();
@@ -3698,9 +3725,13 @@
   function stopPlaying(){
     state.playing = false;
     setPresence(0, 5.5);
+    // Cancel the self-rescheduling chains immediately. Deferring this by 5.8s left them running
+    // through the fade, and a quick Play inside that window stacked a second chain on top.
+    // The chord voices themselves still fade out on the delay below, which is what's audible.
+    if(chordTimer){ clearTimeout(chordTimer); chordTimer = null; chordTimerFireAt = null; }
+    if(sparkleTimer){ clearTimeout(sparkleTimer); sparkleTimer = null; }
     setTimeout(()=>{
       if(!state.playing) stopAllChords(4);
-      if(sparkleTimer) clearTimeout(sparkleTimer);
     }, 5800);
     updatePlayUI();
     clearAutoFade();
@@ -4100,6 +4131,7 @@
       if(sbBtn){ sbBtn.classList.add('recording'); sbBtn.setAttribute('aria-label', 'Stop and save recording'); sbBtn.setAttribute('aria-pressed', 'true'); }
       if(sbLabel) sbLabel.textContent = 'stop & save';
       if(stemsChip) stemsChip.disabled = true;
+      setViewTabsLocked(true); // a view switch mid-take would stop playback and fade the recording to silence
       // An ordinary recording and a loop capture share the same underlying tap/chunk
       // pipeline and recordState, so only one can run at a time.
       if(loopBtn) loopBtn.disabled = true;
@@ -4148,6 +4180,7 @@
 
     btn.disabled = false;
     if(stemsChip) stemsChip.disabled = false;
+    setViewTabsLocked(false);
     if(loopBtn) loopBtn.disabled = false;
     if(loopLenSel) loopLenSel.disabled = false;
     label.textContent = 'record';
@@ -4180,6 +4213,15 @@
     // Biome totems: a mid-capture biome switch would swap the reverb/scale/chords outright,
     // which is even more disruptive than an un-frozen chord change.
     document.querySelectorAll('.totem').forEach(b=>{ b.disabled = locked; });
+    setViewTabsLocked(locked);
+  }
+  // Switching to the soundboard calls stopPlaying(), which ramps the master to silence while the
+  // recorder taps keep running — the take would fade to nothing partway through with no warning,
+  // and a loop capture's crossfade would be built from that dead tail. So the view tabs lock for
+  // the duration of any capture, the same way the biome and freeze controls already do.
+  function setViewTabsLocked(locked){
+    [document.getElementById('viewTabInstrument'), document.getElementById('viewTabSounds')]
+      .forEach(t=>{ if(t) t.disabled = locked; });
   }
   function resetLoopCaptureUI(){
     const btn = document.getElementById('loopCaptureBtn');
@@ -4391,6 +4433,27 @@
     });
     return any ? out : null;
   }
+  // The chord editor mutates BIOMES[name].chords in place, and nothing held a copy of the
+  // originals — so once you cycled a chord, that edit stuck to the biome for the rest of the
+  // session and every preset loaded afterwards silently inherited it. Factory presets carry no
+  // chordEdits of their own, so they could never restore their intended progression. Snapshot
+  // the stock chords once, at startup, before anything can edit them.
+  const BIOME_CHORD_DEFAULTS = (function(){
+    const out = {};
+    Object.keys(BIOMES).forEach(name=>{
+      out[name] = BIOMES[name].chords.map(c=>({ deg:c.deg, seventh:!!c.seventh }));
+    });
+    return out;
+  })();
+  function resetChordsToDefaults(){
+    Object.keys(BIOME_CHORD_DEFAULTS).forEach(name=>{
+      const biome = BIOMES[name];
+      if(!biome) return;
+      BIOME_CHORD_DEFAULTS[name].forEach((c,i)=>{
+        if(biome.chords[i]){ biome.chords[i].deg = c.deg; biome.chords[i].seventh = c.seventh; }
+      });
+    });
+  }
   function applyChordEditsToBiomes(edits){
     if(!edits) return;
     Object.keys(edits).forEach(name=>{
@@ -4480,7 +4543,9 @@
     if(!data || typeof data !== 'object') return;
     const incoming = sanitizeState(data.state);
     const chordEdits = sanitizeChordEdits(data.chordEdits);
-    if(chordEdits) applyChordEditsToBiomes(chordEdits);
+    // A sound that carries no chord edits means "the stock progression", not "keep whatever the
+    // last person did" — otherwise a factory preset can never restore its own harmony.
+    if(chordEdits) applyChordEditsToBiomes(chordEdits); else resetChordsToDefaults();
 
     const wasPlaying = state.playing;
     if(incoming.biome !== state.biome) switchBiome(incoming.biome);
@@ -4727,6 +4792,12 @@
     // nothing else needs to change for silence. The only thing that makes sound in this
     // view from here on is a button press, via that entry's own play().
     if(toSounds && state.playing) stopPlaying();
+    // A running phrase loop keeps firing pad notes on its own timers no matter which view is
+    // showing, and each one re-opens the master — so it has to go too, or the soundboard is not
+    // silent. Popovers close because switching by keyboard never fires the document click
+    // handler that normally closes them, leaving one to reappear when you switch back.
+    if(toSounds) stopLooper();
+    closePopovers();
     currentView = toSounds ? 'sounds' : 'instrument';
     // stopPlaying() alone is not enough: the wind and the Cave dread bed are continuous and
     // only silent because masterGain is near zero, but every soundboard hit opens that master
